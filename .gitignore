@@ -1,0 +1,42 @@
+# Environment secrets
+.env
+
+# Virtual environment
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Provider temporary / debug files
+**/.tmp/
+!**/.tmp/.gitkeep
+
+# Logs
+pylance_errors.json
+pyrightconfig.json
+
+
+.codemaker
+.raven/
+.claude/
+.codex/
+.agents/
+
+ravenspec/schemas/sdd/
+ravenspec
+.gstack/
