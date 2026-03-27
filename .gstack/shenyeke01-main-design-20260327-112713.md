@@ -413,7 +413,8 @@ Inside that feature:
   **Resolved**: Simple feature list first. Dashboard deferred.
 - What naming convention should feature commands follow:
   `sinyuk-cli gitlab auto-mr` or `sinyuk-cli gitlab mr create`?
-  **Open**: To be decided when first real feature lands.
+  **Resolved**: Use `sinyuk-cli <feature> <action>` in Phase 1
+  (for example: `sinyuk-cli gitlab auto-mr`) to keep command discovery simple.
 - When should a task center be introduced: after the first long-running feature,
   or only after two features clearly need shared job history?
   **Resolved**: Defer until real need is proven.
@@ -629,3 +630,122 @@ defaults.
 
 **Rationale**: "Schrödinger's config" — when debugging, you can never know if a
 value came from the user's file or a hidden code default. Explicit > clever.
+
+## Design Addendum (Plan Design Review — 2026-03-27)
+
+This addendum resolves design gaps found in `/plan-design-review` so
+implementation can proceed without UX ambiguity.
+
+### Information Architecture Additions
+
+#### First 5 Seconds Hierarchy (Workbench Home)
+
+```text
+┌─────────────────────────────────────────────────┐
+│ sinyuk-cli v0.1.0                   [Help]     │  <- Orientation
+├─────────────────────────────────────────────────┤
+│ Features                                        │  <- Primary task area
+│ > hello-world   Run hello-world demo           │  <- Primary action
+│   gitlab        Create and inspect MR drafts   │  <- Secondary actions
+├─────────────────────────────────────────────────┤
+│ ↑/↓ Navigate  Enter Select  Ctrl+C Quit        │  <- Interaction hints
+└─────────────────────────────────────────────────┘
+```
+
+Priority rule: orientation first, one clear action second, key hints always
+visible in the footer.
+
+### Interaction Coverage Matrix (Workbench + Direct Command)
+
+| SURFACE | LOADING | EMPTY | ERROR | SUCCESS | PARTIAL |
+|---------|---------|-------|-------|---------|---------|
+| Workbench home | Show skeleton rows + "Loading features..." | "No features registered yet" + "Add first feature" hint | "Failed to load feature registry" + retry key | Feature list appears and first row is focused | Feature list renders but marks unavailable features as disabled |
+| Feature screen (hello-world) | Spinner + path status | Warm empty state + change path action | Red error + retry when recoverable | Green summary + details action | Yellow summary + retry-failed action |
+| Direct command output | "Running `<feature> <action>`..." line | "No target files/items found" + next command hint | Explicit one-line error + exit code guidance | Deterministic result summary | "N succeeded / M failed" + follow-up command hint |
+| Fallback handoff | "Switching to interactive mode..." | N/A | "Cannot open interactive mode in non-TTY" | Feature screen opened with prefilled context | Prefilled context opened but warns which args were missing |
+
+### User Journey Extension: Power User + Failure Recovery
+
+| STEP | USER DOES | USER FEELS | DESIGN SUPPORTS |
+|------|-----------|------------|-----------------|
+| 1 | Runs `sinyuk-cli gitlab auto-mr` in terminal | Fast, focused | Short deterministic startup line |
+| 2 | Misses one required arg in TTY | Mild friction | Clear message + controlled interactive handoff |
+| 3 | Corrects input in feature screen | Back in control | Prefilled values, only missing fields requested |
+| 4 | Starts execution then presses `Ctrl+C` | Wants safe abort | Immediate cancel feedback + clean closure text |
+| 5 | Re-runs with complete args in non-TTY script | Needs predictability | Fail-fast behavior with explicit non-interactive guidance |
+
+### Terminal Visual Tokens (Interim, Until DESIGN.md Exists)
+
+Because `DESIGN.md` is currently missing, Phase 1 uses these explicit tokens to
+avoid ad-hoc styling drift:
+
+| TOKEN | VALUE | USAGE |
+|-------|-------|-------|
+| `color.info` | `blueBright` | Neutral status lines and tips |
+| `color.success` | `greenBright` | Completed operations |
+| `color.warn` | `yellowBright` | Partial success and recoverable issues |
+| `color.error` | `redBright` | Fail-fast errors |
+| `color.muted` | `gray` | Secondary descriptions |
+| `space.row` | `1` line | Vertical rhythm between state blocks |
+| `space.section` | `2` lines | Separation between major regions |
+| `focus.marker` | `>` | Focused item indicator in lists |
+
+Rule: use semantic tokens only (`success`, `warn`, `error`), not raw colors in
+feature code.
+
+### Accessibility Clarification
+
+Accessible mode behavior is now explicit:
+- TTY interactive mode is keyboard-first and hint-driven.
+- Non-TTY mode must never attempt Ink rendering.
+- Every direct-command error includes a one-line next action.
+- Footer hints remain visible in all interactive states.
+
+### Unresolved Design Decisions
+
+All high-impact design decisions for Phase 1 are resolved. Remaining decisions
+are intentionally deferred and listed below.
+
+## What Already Exists (Design Leverage)
+
+- Approved hybrid workbench design with explicit state table for hello-world.
+- Strong architecture decisions AD-1 through AD-7 locking interaction boundaries.
+- Existing TODO backlog for fallback matrix and test expansion gates.
+- Stable command naming pattern now resolved: `sinyuk-cli <feature> <action>`.
+
+## NOT in Scope (Design, Phase 1)
+
+- Rich dashboard home view (deferred to post-feature-2, avoids premature chrome).
+- Theme switching / dark-light token sets (single clear terminal palette first).
+- Advanced animation transitions (terminal UX relies on clarity over motion).
+- Full screen reader parity inside Ink views (direct command path is primary a11y mode).
+- Multi-pane task center UI (deferred until long-running multi-task workflows exist).
+
+## DESIGN PLAN REVIEW — COMPLETION SUMMARY
+
+| Area | Score |
+|------|-------|
+| Initial overall design completeness | 7/10 |
+| Information Architecture | 8/10 -> 10/10 |
+| Interaction State Coverage | 7/10 -> 10/10 |
+| User Journey & Emotional Arc | 8/10 -> 9/10 |
+| AI Slop Risk (TUI context) | 8/10 -> 9/10 |
+| Design System Alignment | 5/10 -> 8/10 |
+| Responsive & Accessibility | 8/10 -> 9/10 |
+| Unresolved Decisions | 1 -> 0 |
+| Final overall design completeness | 9/10 |
+
+Decisions made in this pass: 6  
+Decisions deferred: 5 (listed in NOT in Scope)
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAN | 11 issues, 0 critical gaps |
+| Design Review | `/plan-design-review` | UI/UX gaps | 2 | CLEAN | latest: 9/10 -> 9/10, 0 decisions |
+
+**UNRESOLVED:** 0  
+**VERDICT:** ENG + DESIGN CLEARED — ready to implement
