@@ -1,0 +1,60 @@
+{
+	"name": "sinyuk-cli",
+	"version": "0.1.0",
+	"description": "Config-driven interactive terminal workbench",
+	"type": "module",
+	"bin": {
+		"sinyuk-cli": "dist/index.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsup --config tsup.config.ts",
+		"build:watch": "tsup --config tsup.config.ts --watch",
+		"lint": "eslint .",
+		"lint:fix": "eslint . --fix",
+		"format": "prettier . --write",
+		"format:check": "prettier . --check",
+		"test": "npm run build && vitest run",
+		"test:unit": "vitest run tests/unit",
+		"test:smoke": "npm run build && vitest run tests/smoke"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Sinyuk7/sinyuk-cli.git"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"bugs": {
+		"url": "https://github.com/Sinyuk7/sinyuk-cli/issues"
+	},
+	"homepage": "https://github.com/Sinyuk7/sinyuk-cli#readme",
+	"dependencies": {
+		"@inkjs/ui": "^2.0.0",
+		"clipanion": "^4.0.0-rc.4",
+		"ink": "^6.8.0",
+		"react": "^19.2.4",
+		"yaml": "^2.8.3",
+		"zod": "^4.3.6"
+	},
+	"engines": {
+		"node": ">=18"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.38.0",
+		"@types/node": "^25.5.0",
+		"@types/react": "^19.2.14",
+		"@typescript-eslint/eslint-plugin": "^8.46.1",
+		"@typescript-eslint/parser": "^8.46.1",
+		"eslint": "^9.38.0",
+		"eslint-config-prettier": "^10.1.8",
+		"execa": "^9.6.1",
+		"globals": "^16.4.0",
+		"prettier": "^3.6.2",
+		"tsup": "^8.5.1",
+		"typescript": "^5.9.3",
+		"vitest": "^4.1.2"
+	}
+}

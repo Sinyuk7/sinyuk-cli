@@ -9,6 +9,7 @@ venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
+node_modules/
 dist/
 build/
 
@@ -29,14 +30,3 @@ Thumbs.db
 # Logs
 pylance_errors.json
 pyrightconfig.json
-
-
-.codemaker
-.raven/
-.claude/
-.codex/
-.agents/
-
-ravenspec/schemas/sdd/
-ravenspec
-.gstack/
