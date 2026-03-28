@@ -2,10 +2,7 @@ import { createStore } from 'zustand/vanilla';
 
 import type { PlatformConfig } from '../../../platform/config/schema.js';
 import type { LoraScanResult } from '../shared/artifacts.js';
-import {
-	buildCropPlan,
-	loadCropScanContext,
-} from '../shared/crop-plan.js';
+import { buildCropPlan, loadCropScanContext } from '../shared/crop-plan.js';
 import { getLoraDatasetFeatureConfig } from '../shared/schema.js';
 import type {
 	CropPlanSpecProgress,
@@ -18,6 +15,7 @@ import { executeCropPlan } from './run.js';
 type CropStep =
 	| 'input'
 	| 'scanning'
+	| 'empty'
 	| 'scan-preview'
 	| 'ratio-select'
 	| 'resolution-select'
@@ -47,8 +45,10 @@ export type CropState = {
 export type CropActions = {
 	setPathInput: (value: string) => void;
 	startScan: (path?: string) => Promise<void>;
+	returnToInput: () => void;
 	openRatioSelection: () => void;
 	toggleRatio: (ratio: string) => void;
+	setSelectedRatios: (values: string[]) => void;
 	openResolutionSelection: () => void;
 	setCurrentResolution: (resolution: number) => void;
 	confirmResolutionSelection: () => void;
@@ -145,6 +145,15 @@ export function createCropStore(options: CreateCropStoreOptions) {
 						pathInput,
 						ratioOptions: availableRatios,
 					});
+					if (loaded.scanResult.images.length === 0) {
+						set({
+							step: 'empty',
+							scanResult: loaded.scanResult,
+							ratioStats: loaded.ratioStats,
+						});
+						return;
+					}
+
 					set({
 						step: 'scan-preview',
 						scanResult: loaded.scanResult,
@@ -153,6 +162,22 @@ export function createCropStore(options: CreateCropStoreOptions) {
 				} catch (error) {
 					failTo(set, (error as Error).message, 'input');
 				}
+			},
+
+			returnToInput() {
+				set({
+					step: 'input',
+					scanResult: null,
+					ratioStats: [],
+					selectedRatios: [],
+					resolutionByRatio: {},
+					resolutionCursor: 0,
+					cropPlan: [],
+					runResult: null,
+					currentSpecProgress: null,
+					currentImageProgress: null,
+					errorMessage: null,
+				});
 			},
 
 			openRatioSelection() {
@@ -176,6 +201,21 @@ export function createCropStore(options: CreateCropStoreOptions) {
 				if (!selectedRatios.includes(ratio)) {
 					delete resolutionByRatio[ratio];
 				}
+
+				set({
+					selectedRatios,
+					resolutionByRatio,
+				});
+			},
+
+			setSelectedRatios(values) {
+				const state = get();
+				const selectedRatios = state.availableRatios.filter((ratio) => values.includes(ratio));
+				const resolutionByRatio = Object.fromEntries(
+					Object.entries(state.resolutionByRatio).filter(([ratio]) =>
+						selectedRatios.includes(ratio),
+					),
+				);
 
 				set({
 					selectedRatios,

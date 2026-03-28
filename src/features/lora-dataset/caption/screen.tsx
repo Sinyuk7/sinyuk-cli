@@ -13,6 +13,25 @@ type CaptionScreenProps = FeatureScreenProps & {
 	onExit: (exitCode?: number) => void;
 };
 
+type ScreenFrameProps = {
+	breadcrumb: string;
+	children: React.ReactNode;
+	hint?: string;
+};
+
+const CAPTION_BREADCRUMB = 'lora-dataset › caption';
+const PREVIEW_BREADCRUMB = 'lora-dataset › caption › preview';
+
+function ScreenFrame(props: ScreenFrameProps): React.JSX.Element {
+	return (
+		<Box flexDirection="column" gap={1}>
+			<Text color="blueBright">{props.breadcrumb}</Text>
+			{props.children}
+			{props.hint ? <Text dimColor>{props.hint}</Text> : null}
+		</Box>
+	);
+}
+
 /**
  * Caption Action screen - Activity root that renders sub-views by store.step.
  *
@@ -24,6 +43,7 @@ type CaptionScreenProps = FeatureScreenProps & {
  */
 export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 	const autoPreviewRequestedRef = useRef(false);
+	const initialScanRequestedRef = useRef(false);
 	const storeRef = useRef(
 		createCaptionStore({
 			configSnapshot: props.configSnapshot,
@@ -49,7 +69,12 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 	const actions = useStore(store, (s) => s.actions);
 
 	useEffect(() => {
-		if (props.initialPath && step === 'input' && scanResult === null) {
+		if (!props.initialPath || initialScanRequestedRef.current) {
+			return;
+		}
+
+		if (step === 'input' && scanResult === null) {
+			initialScanRequestedRef.current = true;
 			void actions.startScan(props.initialPath);
 		}
 	}, [actions, props.initialPath, scanResult, step]);
@@ -68,8 +93,7 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 
 	if (step === 'input') {
 		return (
-			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - caption</Text>
+			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
 				<Text>Enter dataset path:</Text>
 				<TextInput
 					defaultValue={pathInput}
@@ -79,22 +103,41 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 						void actions.startScan(value);
 					}}
 				/>
-			</Box>
+			</ScreenFrame>
+		);
+	}
+
+	if (step === 'empty') {
+		return (
+			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
+				<StatusMessage variant="info">
+					No supported images found in {scanResult?.basePath ?? pathInput}
+				</StatusMessage>
+				<Text>Change path? [Y/n]</Text>
+				<ConfirmInput onConfirm={() => actions.returnToInput()} onCancel={props.onExit} />
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'scanning') {
-		return <Spinner label={`Scanning ${pathInput}...`} />;
+		return (
+			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
+				<Spinner label={`Scanning ${pathInput}...`} />
+			</ScreenFrame>
+		);
 	}
 
 	if (step === 'previewing') {
-		return <Spinner label="Running preview caption..." />;
+		return (
+			<ScreenFrame breadcrumb={PREVIEW_BREADCRUMB}>
+				<Spinner label="Running preview caption..." />
+			</ScreenFrame>
+		);
 	}
 
 	if (step === 'preview-result' && previewResult) {
 		return (
-			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - caption - preview</Text>
+			<ScreenFrame breadcrumb={PREVIEW_BREADCRUMB}>
 				{promptPreviewLines.length > 0 && (
 					<Box flexDirection="column">
 						<Text dimColor>Prompt preview:</Text>
@@ -110,52 +153,60 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 				<Text>Caption: {previewResult.caption}</Text>
 				<Text>Run full batch on {scanResult?.images.length ?? 0} images? [Y/n]</Text>
 				<ConfirmInput onConfirm={() => actions.openConfirm()} onCancel={props.onExit} />
-			</Box>
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'confirm') {
 		return (
-			<Box flexDirection="column" gap={1}>
+			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
 				<Text color="yellowBright">
 					Confirm: run caption on {scanResult?.images.length ?? 0} images?
 				</Text>
 				<Text>This will call the configured provider. [Y/n]</Text>
 				<ConfirmInput onConfirm={() => void actions.runBatch()} onCancel={props.onExit} />
-			</Box>
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'running') {
-		const percent = progress && progress.total > 0 ? Math.floor((progress.completed / progress.total) * 100) : 0;
+		const percent =
+			progress && progress.total > 0 ? Math.floor((progress.completed / progress.total) * 100) : 0;
+		const activeKey = progress?.activeWorkers[0]?.key ?? 'Starting...';
 		return (
-			<Box flexDirection="column" gap={1}>
+			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
 				<ProgressBar value={percent} />
-				<Text>{progress ? `[${progress.completed}/${progress.total}] failed=${progress.failed}` : 'Starting...'}</Text>
-			</Box>
+				<Text>
+					{progress
+						? `[${progress.completed}/${progress.total}] ${activeKey} failed=${progress.failed}`
+						: 'Starting...'}
+				</Text>
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'bootstrap-paused') {
 		return (
-			<Box flexDirection="column" gap={1}>
+			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
 				<StatusMessage variant="warning">Execution paused.</StatusMessage>
 				{pauseMessageLines.map((line, index) => (
-					<Text key={index}>{line}</Text>
+					<Text key={index} dimColor>
+						{line}
+					</Text>
 				))}
 				<Text>Exit? [Y/n]</Text>
 				<ConfirmInput
 					onConfirm={() => props.onExit(actions.complete())}
 					onCancel={() => props.onExit(actions.complete())}
 				/>
-			</Box>
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'done' && batchResult) {
 		const hasFailures = batchResult.failed.length > 0;
 		return (
-			<Box flexDirection="column" gap={1}>
+			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
 				<StatusMessage variant={hasFailures ? 'warning' : 'success'}>
 					Captioned {batchResult.total} images
 					{hasFailures ? `, ${batchResult.failed.length} failed` : ''}.
@@ -170,16 +221,16 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 						props.onExit(actions.complete());
 					}}
 				/>
-			</Box>
+			</ScreenFrame>
 		);
 	}
 
 	return (
-		<Box flexDirection="column" gap={1}>
+		<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
 			<StatusMessage variant="error">{errorMessage ?? 'Unknown error.'}</StatusMessage>
 			<Text>Retry? [Y/n]</Text>
 			<ConfirmInput onConfirm={() => actions.retryFromError()} onCancel={props.onExit} />
-		</Box>
+		</ScreenFrame>
 	);
 }
 

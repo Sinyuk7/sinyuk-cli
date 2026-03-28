@@ -1,6 +1,7 @@
 import type { Writable } from 'node:stream';
 
 import type { FeatureScreenProps } from '../../../shared/feature-screen.js';
+import { CliError } from '../../../platform/errors.js';
 import { LoraDatasetBootstrapPauseError } from '../shared/bootstrap.js';
 import { ProviderFatalError } from '../shared/provider.js';
 import { loadScanContext, runBatch, runPreview } from '../shared/pipeline.js';
@@ -41,10 +42,15 @@ export async function runCaptionNonInteractive(options: {
 		throw error;
 	}
 
-	options.stdout.write(`Scanned ${loaded.scanResult.images.length} images.\n`);
-	options.stdout.write(`${loaded.promptPreviewLines.join('\n')}\n`);
+	if (loaded.scanResult.images.length === 0) {
+		throw new CliError(
+			`No supported images found in ${loaded.scanResult.basePath}.`,
+			'NO_IMAGES_FOUND',
+		);
+	}
 
 	if (options.mode === 'preview') {
+		options.stdout.write(`Result: Scanned ${loaded.scanResult.images.length} images.\n`);
 		const preview = await runPreview({
 			scanResult: loaded.scanResult,
 			config,
@@ -53,7 +59,9 @@ export async function runCaptionNonInteractive(options: {
 			executionContext: options.createExecutionContext({ entryMode: 'cli', dryRun: false }),
 			previewFile: options.previewFile ?? null,
 		});
-		options.stdout.write(`Preview file: ${preview.relativePath}\n${preview.caption}\n`);
+		options.stdout.write(`Preview: ${preview.relativePath}\n`);
+		options.stdout.write(`${preview.caption}\n`);
+		options.stdout.write('Result: Preview complete.\n');
 		return 0;
 	}
 
@@ -69,11 +77,13 @@ export async function runCaptionNonInteractive(options: {
 		executionContext: options.createExecutionContext({ entryMode: 'cli', dryRun: false }),
 		concurrencyOverride: options.concurrencyOverride ?? null,
 		onProgress: (progress) => {
+			const activeKey = progress.activeWorkers[0]?.key ?? 'Starting...';
 			options.stdout.write(
-				`[${progress.completed}/${progress.total}] failed=${progress.failed} active=${progress.activeWorkers.length}\n`,
+				`[${progress.completed}/${progress.total}] ${activeKey} failed=${progress.failed}\n`,
 			);
 		},
 	});
 
+	options.stdout.write(`Result: Captioned ${batch.total} images, failed ${batch.failed.length}.\n`);
 	return batch.failed.length > 0 ? 2 : 0;
 }

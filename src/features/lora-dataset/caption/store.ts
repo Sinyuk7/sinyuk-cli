@@ -5,10 +5,7 @@ import type { EntryMode, ExecutionContext } from '../../../platform/execution-co
 import type { LoraScanResult } from '../shared/artifacts.js';
 import { LoraDatasetBootstrapPauseError } from '../shared/bootstrap.js';
 import { loadScanContext, runBatch, runPreview } from '../shared/pipeline.js';
-import {
-	getLoraDatasetFeatureConfig,
-	type LoraDatasetDatasetConfig,
-} from '../shared/schema.js';
+import { getLoraDatasetFeatureConfig, type LoraDatasetDatasetConfig } from '../shared/schema.js';
 import type { BatchRunResult, PreviewResult } from '../shared/types.js';
 import type { SchedulerProgress } from '../shared/scheduler.js';
 import type { LoraDatasetWorkspace } from '../shared/workspace.js';
@@ -16,6 +13,7 @@ import type { LoraDatasetWorkspace } from '../shared/workspace.js';
 type CaptionStep =
 	| 'input'
 	| 'scanning'
+	| 'empty'
 	| 'previewing'
 	| 'preview-result'
 	| 'confirm'
@@ -42,6 +40,7 @@ export type CaptionState = {
 export type CaptionActions = {
 	setPathInput: (value: string) => void;
 	startScan: (path?: string) => Promise<void>;
+	returnToInput: () => void;
 	runPreview: () => Promise<void>;
 	openConfirm: () => void;
 	runBatch: () => Promise<void>;
@@ -114,6 +113,17 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 				});
 				try {
 					const loaded = await loadScanContext({ pathInput });
+					if (loaded.scanResult.images.length === 0) {
+						set({
+							step: 'empty',
+							datasetConfig: loaded.datasetConfig,
+							workspace: loaded.workspace,
+							scanResult: loaded.scanResult,
+							promptPreviewLines: loaded.promptPreviewLines,
+						});
+						return;
+					}
+
 					set({
 						step: 'previewing',
 						datasetConfig: loaded.datasetConfig,
@@ -139,6 +149,18 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 
 					failTo(set, (error as Error).message, 'input');
 				}
+			},
+
+			returnToInput() {
+				set({
+					step: 'input',
+					scanResult: null,
+					previewResult: null,
+					batchResult: null,
+					progress: null,
+					pauseMessageLines: [],
+					errorMessage: null,
+				});
 			},
 
 			async runPreview() {

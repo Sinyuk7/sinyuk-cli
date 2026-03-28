@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Box, Text, render } from 'ink';
 import {
 	ConfirmInput,
+	MultiSelect,
 	ProgressBar,
 	Select,
 	Spinner,
@@ -11,13 +12,32 @@ import {
 import { useStore } from 'zustand';
 
 import type { FeatureScreenProps } from '../../../shared/feature-screen.js';
-import { RatioChecklist } from './ratio-checklist.js';
 import { createCropStore } from './store.js';
 
 type CropScreenProps = FeatureScreenProps & {
 	initialPath?: string;
 	onExit: (exitCode?: number) => void;
 };
+
+type ScreenFrameProps = {
+	breadcrumb: string;
+	children: React.ReactNode;
+	hint?: string;
+};
+
+const CROP_BREADCRUMB = 'lora-dataset › crop';
+const RATIO_BREADCRUMB = 'lora-dataset › crop › ratios';
+const RESOLUTION_BREADCRUMB = 'lora-dataset › crop › resolution';
+
+function ScreenFrame(props: ScreenFrameProps): React.JSX.Element {
+	return (
+		<Box flexDirection="column" gap={1}>
+			<Text color="blueBright">{props.breadcrumb}</Text>
+			{props.children}
+			{props.hint ? <Text dimColor>{props.hint}</Text> : null}
+		</Box>
+	);
+}
 
 /**
  * Crop Action screen - Activity root that renders sub-views by store.step.
@@ -29,6 +49,7 @@ type CropScreenProps = FeatureScreenProps & {
  * FAILURE: Store transitions to 'error' step; UI shows error message + retry
  */
 export function CropScreen(props: CropScreenProps): React.JSX.Element {
+	const initialScanRequestedRef = useRef(false);
 	const storeRef = useRef(
 		createCropStore({
 			configSnapshot: props.configSnapshot,
@@ -54,15 +75,19 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 	const actions = useStore(store, (s) => s.actions);
 
 	useEffect(() => {
-		if (props.initialPath && step === 'input' && scanResult === null) {
+		if (!props.initialPath || initialScanRequestedRef.current) {
+			return;
+		}
+
+		if (step === 'input' && scanResult === null) {
+			initialScanRequestedRef.current = true;
 			void actions.startScan(props.initialPath);
 		}
 	}, [actions, props.initialPath, scanResult, step]);
 
 	if (step === 'input') {
 		return (
-			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - crop planner</Text>
+			<ScreenFrame breadcrumb={CROP_BREADCRUMB}>
 				<Text>Enter dataset path:</Text>
 				<TextInput
 					defaultValue={pathInput}
@@ -72,12 +97,28 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 						void actions.startScan(value);
 					}}
 				/>
-			</Box>
+			</ScreenFrame>
+		);
+	}
+
+	if (step === 'empty') {
+		return (
+			<ScreenFrame breadcrumb={CROP_BREADCRUMB}>
+				<StatusMessage variant="info">
+					No supported images found in {scanResult?.basePath ?? pathInput}
+				</StatusMessage>
+				<Text>Change path? [Y/n]</Text>
+				<ConfirmInput onConfirm={() => actions.returnToInput()} onCancel={props.onExit} />
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'scanning') {
-		return <Spinner label={`Scanning ${pathInput}...`} />;
+		return (
+			<ScreenFrame breadcrumb={CROP_BREADCRUMB}>
+				<Spinner label={`Scanning ${pathInput}...`} />
+			</ScreenFrame>
+		);
 	}
 
 	if (step === 'scan-preview' && scanResult) {
@@ -87,8 +128,7 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 			.join(', ');
 
 		return (
-			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - crop - scan preview</Text>
+			<ScreenFrame breadcrumb={CROP_BREADCRUMB}>
 				<Text>Path: {scanResult.basePath}</Text>
 				<Text>Images: {scanResult.images.length}</Text>
 				<Text>Extensions: {extensionSummary || 'none'}</Text>
@@ -100,43 +140,41 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 					</Text>
 				))}
 				<Text>Continue to ratio selection? [Y/n]</Text>
-				<ConfirmInput
-					onConfirm={() => actions.openRatioSelection()}
-					onCancel={props.onExit}
-				/>
-			</Box>
+				<ConfirmInput onConfirm={() => actions.openRatioSelection()} onCancel={props.onExit} />
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'ratio-select') {
 		const options = ratioStats.map((stat) => ({
-			ratio: stat.ratio,
-			count: stat.count,
-			selected: selectedRatios.includes(stat.ratio),
+			label: `${stat.ratio} (${stat.count})`,
+			value: stat.ratio,
 		}));
 
 		return (
-			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - crop - ratios</Text>
+			<ScreenFrame
+				breadcrumb={RATIO_BREADCRUMB}
+				hint="↑/↓ Navigate  Space Toggle  Enter Select  Ctrl+C Quit"
+			>
 				<Text>Select one or more ratios.</Text>
-				<Text dimColor>Use Up/Down to move, Space to toggle, Enter to continue.</Text>
-				<RatioChecklist
+				<MultiSelect
 					options={options}
-					onToggle={actions.toggleRatio}
-					onSubmit={actions.openResolutionSelection}
-					onCancel={props.onExit}
+					defaultValue={selectedRatios}
+					onChange={(values) => actions.setSelectedRatios(values as string[])}
+					onSubmit={(values) => {
+						actions.setSelectedRatios(values as string[]);
+						actions.openResolutionSelection();
+					}}
 				/>
 				<Text>Selected: {selectedRatios.length}</Text>
-			</Box>
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'resolution-select') {
 		const currentRatio = selectedRatios[resolutionCursor];
 		const currentResolution =
-			(currentRatio && resolutionByRatio[currentRatio]) ??
-			availableResolutions[0] ??
-			0;
+			(currentRatio && resolutionByRatio[currentRatio]) ?? availableResolutions[0] ?? 0;
 		const resolutionOptions = availableResolutions.map((resolution) => ({
 			value: String(resolution),
 			label: `${resolution}px`,
@@ -149,8 +187,10 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 			.join(', ');
 
 		return (
-			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - crop - resolution</Text>
+			<ScreenFrame
+				breadcrumb={RESOLUTION_BREADCRUMB}
+				hint="↑/↓ Navigate  Enter Select  Ctrl+C Quit"
+			>
 				<Text>
 					Ratio {resolutionCursor + 1}/{selectedRatios.length}: {currentRatio}
 				</Text>
@@ -159,9 +199,7 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 					key={currentRatio}
 					options={resolutionOptions}
 					defaultValue={String(currentResolution)}
-					onChange={(value) =>
-						actions.setCurrentResolution(Number(value as string))
-					}
+					onChange={(value) => actions.setCurrentResolution(Number(value as string))}
 				/>
 				<Text dimColor>Current plan: {chosenSummary}</Text>
 				<Text>
@@ -173,14 +211,13 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 					onConfirm={() => actions.confirmResolutionSelection()}
 					onCancel={props.onExit}
 				/>
-			</Box>
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'confirm' && scanResult) {
 		return (
-			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - crop - confirm</Text>
+			<ScreenFrame breadcrumb={CROP_BREADCRUMB}>
 				<Text>Dataset: {scanResult.basePath}</Text>
 				<Text>Images: {scanResult.images.length}</Text>
 				<Text>Specs:</Text>
@@ -193,21 +230,18 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 				))}
 				<Text>Run crop plan now? [Y/n]</Text>
 				<ConfirmInput onConfirm={() => void actions.runPlan()} onCancel={props.onExit} />
-			</Box>
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'running') {
 		const percent =
 			currentImageProgress && currentImageProgress.total > 0
-				? Math.floor(
-						(currentImageProgress.current / currentImageProgress.total) * 100,
-					)
+				? Math.floor((currentImageProgress.current / currentImageProgress.total) * 100)
 				: 0;
 
 		return (
-			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - crop - running</Text>
+			<ScreenFrame breadcrumb={CROP_BREADCRUMB}>
 				<Text>
 					{currentSpecProgress
 						? `Spec ${currentSpecProgress.current}/${currentSpecProgress.total}: ${currentSpecProgress.spec.ratio} @ ${currentSpecProgress.spec.longEdge}px`
@@ -219,26 +253,23 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 						? `[${currentImageProgress.current}/${currentImageProgress.total}] ${currentImageProgress.file}`
 						: 'Starting crop...'}
 				</Text>
-			</Box>
+			</ScreenFrame>
 		);
 	}
 
 	if (step === 'done' && runResult) {
 		return (
-			<Box flexDirection="column" gap={1}>
+			<ScreenFrame breadcrumb={CROP_BREADCRUMB}>
 				<StatusMessage variant={runResult.hasFailures ? 'warning' : 'success'}>
 					Completed {runResult.totalSpecs} crop spec
 					{runResult.totalSpecs === 1 ? '' : 's'}
-					{runResult.hasFailures
-						? `, ${runResult.failedSpecs} with failures`
-						: ' successfully'}
-					.
+					{runResult.hasFailures ? `, ${runResult.failedSpecs} with failures` : ' successfully'}.
 				</StatusMessage>
 				{runResult.specRuns.map((item) => (
-					<Text key={`${item.spec.ratio}-${item.spec.longEdge}`}>
+					<Text key={`${item.spec.ratio}-${item.spec.longEdge}`} dimColor>
 						{'  '}
-						{item.spec.ratio} @ {item.spec.longEdge}px: cropped {item.result.cropped},
-						skipped {item.result.skippedExisting}, failed {item.result.failed.length}
+						{item.spec.ratio} @ {item.spec.longEdge}px: cropped {item.result.cropped}, skipped{' '}
+						{item.result.skippedExisting}, failed {item.result.failed.length}
 					</Text>
 				))}
 				<Text>Exit? [Y/n]</Text>
@@ -246,16 +277,16 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 					onConfirm={() => props.onExit(actions.complete())}
 					onCancel={() => props.onExit(actions.complete())}
 				/>
-			</Box>
+			</ScreenFrame>
 		);
 	}
 
 	return (
-		<Box flexDirection="column" gap={1}>
+		<ScreenFrame breadcrumb={CROP_BREADCRUMB}>
 			<StatusMessage variant="error">{errorMessage ?? 'Unknown error.'}</StatusMessage>
 			<Text>Retry? [Y/n]</Text>
 			<ConfirmInput onConfirm={() => actions.retryFromError()} onCancel={props.onExit} />
-		</Box>
+		</ScreenFrame>
 	);
 }
 
