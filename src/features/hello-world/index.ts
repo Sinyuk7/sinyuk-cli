@@ -1,13 +1,20 @@
+import type { FeatureDomain } from '../types.js';
 import { HelloWorldRunCommand } from './command.js';
 import { HelloWorldScreen } from './screen.js';
-import type { FeatureEntry } from '../types.js';
 
-export function getHelloWorldFeatureEntry(): FeatureEntry {
+export function getHelloWorldDomain(): FeatureDomain {
 	return {
 		id: 'hello-world',
-		title: 'hello-world',
-		description: 'Run hello-world demo pipeline',
-		getCommand: () => HelloWorldRunCommand,
-		getScreen: () => HelloWorldScreen,
+		title: 'Hello World',
+		description: 'Demo pipeline for file processing',
+		actions: [
+			{
+				id: 'run',
+				title: 'Run',
+				description: 'Run hello-world demo pipeline',
+				getCommand: () => HelloWorldRunCommand,
+				getScreen: () => HelloWorldScreen,
+			},
+		],
 	};
 }

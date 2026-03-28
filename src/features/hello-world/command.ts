@@ -31,7 +31,7 @@ export class HelloWorldRunCommand extends Command<SinyukCliContext> {
 		],
 	});
 
-	readonly path = Option.String('--path', { required: false });
+	readonly targetPath = Option.String('--path', { required: false });
 	readonly all = Option.Boolean('--all', false);
 	readonly file = Option.Array('--file');
 	readonly dryRun = Option.Boolean('--dry-run', false);
@@ -44,7 +44,7 @@ export class HelloWorldRunCommand extends Command<SinyukCliContext> {
 			const loaded = loadResolvedConfig({ cwd });
 			const featureConfig = getHelloWorldFeatureConfig(loaded.config);
 			const selectedFromFlags = this.file ?? [];
-			const hasMissingInput = !this.path || (!this.all && selectedFromFlags.length === 0);
+			const hasMissingInput = !this.targetPath || (!this.all && selectedFromFlags.length === 0);
 			const isTTY = isInteractiveTty(this.context);
 
 			if (hasMissingInput) {
@@ -52,6 +52,7 @@ export class HelloWorldRunCommand extends Command<SinyukCliContext> {
 					hasMissingRequiredInput: hasMissingInput,
 					isTTY,
 					envSnapshot: this.context.env,
+					requiredInputHint: '--path and (--all or --file)',
 				});
 
 				if (!fallbackDecision.allowed) {
@@ -77,8 +78,8 @@ export class HelloWorldRunCommand extends Command<SinyukCliContext> {
 				return 0;
 			}
 
-			const scan = await scanHelloWorldFiles({
-				basePath: this.path,
+		const scan = await scanHelloWorldFiles({
+			basePath: this.targetPath,
 				featureConfig,
 				abortSignal: shutdown.signal,
 			});

@@ -29,7 +29,10 @@ export function getInteractiveFallbackDecision(input: {
 	hasMissingRequiredInput: boolean;
 	isTTY: boolean;
 	envSnapshot: Readonly<Record<string, string | undefined>>;
+	requiredInputHint?: string;
 }): FallbackDecision {
+	const requiredInputHint = input.requiredInputHint ?? 'required command inputs';
+
 	if (!input.hasMissingRequiredInput) {
 		return {
 			allowed: false,
@@ -40,16 +43,14 @@ export function getInteractiveFallbackDecision(input: {
 	if (!input.isTTY) {
 		return {
 			allowed: false,
-			reason:
-				'Missing required inputs for non-interactive mode. Provide --path and (--all or --file).',
+			reason: `Missing required inputs for non-interactive mode. Provide ${requiredInputHint}.`,
 		};
 	}
 
 	if (isCiEnvironment(input.envSnapshot)) {
 		return {
 			allowed: false,
-			reason:
-				'Missing required inputs in CI mode. Provide --path and (--all or --file); interactive fallback is disabled in CI.',
+			reason: `Missing required inputs in CI mode. Provide ${requiredInputHint}; interactive fallback is disabled in CI.`,
 		};
 	}
 

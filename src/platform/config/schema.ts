@@ -14,8 +14,10 @@ export const PlatformConfigSchema = z
 export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 
 export type LoadedConfig = {
+	sinyukHomePath: string;
 	globalPath: string;
 	projectPath: string;
 	projectLoaded: boolean;
+	featureConfigPaths: string[];
 	config: Readonly<PlatformConfig>;
 };

@@ -26,6 +26,8 @@ Thumbs.db
 # Provider temporary / debug files
 **/.tmp/
 !**/.tmp/.gitkeep
+src/features/**/tests/.local-data/
+src/features/**/tests/.tmp/
 
 # Logs
 pylance_errors.json

@@ -1,8 +1,18 @@
-import { getHelloWorldFeatureEntry } from './hello-world/index.js';
-import type { FeatureEntry } from './types.js';
+import { getHelloWorldDomain } from './hello-world/index.js';
+import { getLoraDatasetDomain } from './lora-dataset/index.js';
+import type { FeatureDomain } from './types.js';
 
-const FEATURES: FeatureEntry[] = [getHelloWorldFeatureEntry()];
+const DOMAINS: FeatureDomain[] = [getHelloWorldDomain(), getLoraDatasetDomain()];
 
-export function getFeatureRegistry(): FeatureEntry[] {
-	return FEATURES;
+/**
+ * Return all registered feature domains.
+ *
+ * INTENT: Single registry consumed by both CLI (command collection) and Workbench (menu rendering)
+ * INPUT: none
+ * OUTPUT: FeatureDomain[]
+ * SIDE EFFECT: none
+ * FAILURE: none
+ */
+export function getFeatureDomains(): FeatureDomain[] {
+	return DOMAINS;
 }

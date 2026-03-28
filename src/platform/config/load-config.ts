@@ -1,22 +1,19 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 
 import { parse } from 'yaml';
 
 import { ConfigError } from '../errors.js';
+import { getFeatureConfigPath, getGlobalConfigPath, getSinyukHomePath } from '../home.js';
 import { LoadedConfig, PlatformConfig, PlatformConfigSchema } from './schema.js';
 
-type LoadConfigOptions = {
+export type LoadConfigOptions = {
 	cwd: string;
+	sinyukHomePath?: string;
 	globalConfigPath?: string;
 	projectConfigPath?: string;
 	cliOverrides?: Partial<PlatformConfig>;
 };
-
-function getGlobalConfigPath(): string {
-	return join(homedir(), '.config', 'sinyuk', 'config.yaml');
-}
 
 function getProjectConfigPath(cwd: string): string {
 	return join(cwd, 'sinyuk.yaml');
@@ -53,21 +50,89 @@ function mergeAtomic(base: PlatformConfig, override?: Partial<PlatformConfig>): 
 		return { ...base };
 	}
 
-	return { ...base, ...override };
+	return {
+		...base,
+		...override,
+		features: {
+			...(base.features ?? {}),
+			...(override.features ?? {}),
+		},
+	};
 }
 
 /**
-"""Resolve config from global/project/CLI layers with simple atomic precedence.
+"""List every existing feature-scoped config file under SINYUK_HOME.
 
-INTENT: 按 CLI > project > global > defaults(空对象) 的顺序加载并合并配置
+INTENT: Discover independently owned feature config files without hard-coding feature ids
+INPUT: optional sinyukHomePath override
+OUTPUT: absolute config.yaml paths for every feature directory that contains one
+SIDE EFFECT: Read the feature home directory entries from disk
+FAILURE: Propagate filesystem errors from directory reads
+"""
+ */
+function listFeatureConfigPaths(sinyukHomePath?: string): string[] {
+	const featuresRoot = join(getSinyukHomePath(sinyukHomePath), 'features');
+	if (!existsSync(featuresRoot)) {
+		return [];
+	}
+
+	return readdirSync(featuresRoot, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => getFeatureConfigPath(entry.name, sinyukHomePath))
+		.filter((configPath) => existsSync(configPath));
+}
+
+/**
+"""Read raw feature config documents from every feature home directory.
+
+INTENT: Build a feature-id keyed snapshot before platform-level validation and merging
+INPUT: optional sinyukHomePath override
+OUTPUT: record of feature id to parsed YAML document
+SIDE EFFECT: Read feature config files from disk
+FAILURE: Throw ConfigError when any feature config YAML cannot be parsed
+"""
+ */
+function readFeatureHomeConfigs(sinyukHomePath?: string): Record<string, unknown> {
+	const featureConfigs = listFeatureConfigPaths(sinyukHomePath).map((configPath) => ({
+		featureId: basename(dirname(configPath)),
+		config: parseYamlFile(configPath),
+	}));
+
+	return Object.fromEntries(featureConfigs.map((entry) => [entry.featureId, entry.config]));
+}
+
+/**
+"""Wrap feature home configs into the platform config envelope.
+
+INTENT: Reuse the same platform schema and merge path for feature-home config files
+INPUT: optional sinyukHomePath override
+OUTPUT: PlatformConfig containing only the features snapshot
+SIDE EFFECT: Read feature config files from disk
+FAILURE: Throw ConfigError when the wrapped feature snapshot violates the platform schema
+"""
+ */
+function buildFeatureHomeConfigSnapshot(sinyukHomePath?: string): PlatformConfig {
+	const featureConfigs = readFeatureHomeConfigs(sinyukHomePath);
+	if (Object.keys(featureConfigs).length === 0) {
+		return {};
+	}
+
+	return validateConfig({ features: featureConfigs }, '<SINYUK_HOME>/features');
+}
+
+/**
+"""Resolve the final config snapshot from platform, feature-home, project, and CLI layers.
+
+INTENT: Enforce one explicit load order while keeping each feature's config boundary independent
 INPUT: LoadConfigOptions
 OUTPUT: LoadedConfig
-SIDE EFFECT: 读取文件系统中的 YAML 配置文件
-FAILURE: 缺失全局配置、YAML 解析失败、Zod 校验失败时抛出 ConfigError
+SIDE EFFECT: Read YAML config files from SINYUK_HOME and the current workspace
+FAILURE: Throw ConfigError when required files are missing, YAML is invalid, or schema validation fails
 """
  */
 export function loadResolvedConfig(options: LoadConfigOptions): LoadedConfig {
-	const globalPath = options.globalConfigPath ?? getGlobalConfigPath();
+	const sinyukHomePath = getSinyukHomePath(options.sinyukHomePath);
+	const globalPath = options.globalConfigPath ?? getGlobalConfigPath(sinyukHomePath);
 	const projectPath = options.projectConfigPath ?? getProjectConfigPath(options.cwd);
 
 	if (!existsSync(globalPath)) {
@@ -77,18 +142,25 @@ export function loadResolvedConfig(options: LoadConfigOptions): LoadedConfig {
 	}
 
 	const globalConfig = validateConfig(parseYamlFile(globalPath), globalPath);
+	const featureConfigPaths = listFeatureConfigPaths(sinyukHomePath);
+	const featureHomeConfig = buildFeatureHomeConfigSnapshot(sinyukHomePath);
 
 	const projectLoaded = existsSync(projectPath);
 	const projectConfig = projectLoaded
 		? validateConfig(parseYamlFile(projectPath), projectPath)
 		: undefined;
 
-	const merged = mergeAtomic(mergeAtomic(globalConfig, projectConfig), options.cliOverrides);
+	const merged = mergeAtomic(
+		mergeAtomic(mergeAtomic(globalConfig, featureHomeConfig), projectConfig),
+		options.cliOverrides,
+	);
 
 	return {
+		sinyukHomePath,
 		globalPath,
 		projectPath,
 		projectLoaded,
+		featureConfigPaths,
 		config: Object.freeze(merged),
 	};
 }

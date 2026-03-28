@@ -18,16 +18,19 @@ describe('config show smoke', () => {
 	test('prints sources and merged config', async () => {
 		const home = createTempHome();
 		const cwd = mkdtempSync(join(tmpdir(), 'sinyuk-cli-cwd-'));
-		const globalConfigPath = join(home, '.config', 'sinyuk', 'config.yaml');
+		const globalConfigPath = join(home, '.sinyuk-cli', 'config.yaml');
 
-		mkdirSync(join(home, '.config', 'sinyuk'), { recursive: true });
+		mkdirSync(join(home, '.sinyuk-cli', 'features', 'hello-world'), { recursive: true });
 		writeFileSync(
 			globalConfigPath,
 			`logging:
   level: info
-features:
-  hello-world:
-    includeHidden: false
+`,
+			'utf8',
+		);
+		writeFileSync(
+			join(home, '.sinyuk-cli', 'features', 'hello-world', 'config.yaml'),
+			`includeHidden: false
 `,
 			'utf8',
 		);
@@ -45,11 +48,15 @@ features:
 			env: {
 				...process.env,
 				HOME: home,
+				USERPROFILE: home,
 			},
 		});
 
 		expect(result.exitCode).toBe(0);
+		const normalizedStdout = result.stdout.replaceAll('\\', '/');
 		expect(result.stdout).toContain('Config Sources');
+		expect(result.stdout).toContain('Sinyuk Home');
+		expect(normalizedStdout).toContain('.sinyuk-cli/features/hello-world/config.yaml');
 		expect(result.stdout).toContain('Resolved Config (YAML)');
 		expect(result.stdout).toContain('includeHidden: true');
 	});

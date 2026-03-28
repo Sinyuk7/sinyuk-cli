@@ -1,9 +1,10 @@
 import { Command } from 'clipanion';
+import type { ReadStream, WriteStream } from 'node:tty';
 import React from 'react';
 import { render } from 'ink';
 
 import { getCommandCwd, isInteractiveTty, type SinyukCliContext } from '../cli/context.js';
-import { getFeatureRegistry } from '../features/index.js';
+import { getFeatureDomains } from '../features/index.js';
 import { loadResolvedConfig } from '../platform/config/load-config.js';
 import { createExecutionContext } from '../platform/execution-context.js';
 import { createShutdownController } from '../platform/shutdown/controller.js';
@@ -23,13 +24,13 @@ export class WorkbenchCommand extends Command<SinyukCliContext> {
 		try {
 			const cwd = getCommandCwd(this.context);
 			const loaded = loadResolvedConfig({ cwd });
-			const features = getFeatureRegistry();
+			const domains = getFeatureDomains();
 			const isTTY = isInteractiveTty(this.context);
 
 			let app: ReturnType<typeof render>;
 			app = render(
 				React.createElement(WorkbenchApp, {
-					features,
+					domains,
 					configSnapshot: loaded.config,
 					configInfo: {
 						globalPath: loaded.globalPath,
@@ -53,11 +54,11 @@ export class WorkbenchCommand extends Command<SinyukCliContext> {
 						}),
 					onExit: () => app.unmount(),
 				}),
-				{
-					stdin: this.context.stdin,
-					stdout: this.context.stdout,
-					stderr: this.context.stderr,
-				},
+			{
+				stdin: this.context.stdin as unknown as ReadStream,
+				stdout: this.context.stdout as unknown as WriteStream,
+				stderr: this.context.stderr as unknown as WriteStream,
+			},
 			);
 
 			await app.waitUntilExit();

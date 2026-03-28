@@ -3,14 +3,16 @@ import { Cli } from 'clipanion';
 import { ConfigShowCommand } from './commands/config-show.js';
 import { InitCommand } from './commands/init.js';
 import { WorkbenchCommand } from './commands/workbench.js';
-import { getFeatureRegistry } from './features/index.js';
+import { getFeatureDomains } from './features/index.js';
 import type { SinyukCliContext } from './cli/context.js';
 
 function createCli(): Cli<SinyukCliContext> {
-	const featureCommands = getFeatureRegistry().map((feature) => feature.getCommand());
+	const domains = getFeatureDomains();
+	const domainCommands = domains.flatMap((domain) => domain.getCliCommands?.() ?? []);
+	const actionCommands = domains.flatMap((domain) => domain.actions.map((action) => action.getCommand()));
 
 	return Cli.from<SinyukCliContext>(
-		[ConfigShowCommand, InitCommand, WorkbenchCommand, ...featureCommands],
+		[ConfigShowCommand, InitCommand, WorkbenchCommand, ...domainCommands, ...actionCommands],
 		{
 			binaryName: 'sinyuk-cli',
 			binaryLabel: 'Sinyuk CLI',

@@ -145,7 +145,7 @@ export function HelloWorldScreen(props: FeatureScreenProps): React.JSX.Element {
 	if (stage === 'input') {
 		return (
 			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">hello-world pipeline</Text>
+				<Text color="blueBright">hello-world › run</Text>
 				<Text>Input path and press Enter:</Text>
 				<TextInput
 					defaultValue={pathInput}

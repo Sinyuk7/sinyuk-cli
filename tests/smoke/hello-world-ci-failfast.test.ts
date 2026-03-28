@@ -18,13 +18,15 @@ describe('hello-world ci fail-fast smoke', () => {
 	test('fails fast when required args are missing in CI mode', async () => {
 		const home = createTempHome();
 
-		mkdirSync(join(home, '.config', 'sinyuk'), { recursive: true });
+		mkdirSync(join(home, '.sinyuk-cli', 'features', 'hello-world'), { recursive: true });
 		writeFileSync(
-			join(home, '.config', 'sinyuk', 'config.yaml'),
-			`features:
-  hello-world:
-    includeHidden: false
-`,
+			join(home, '.sinyuk-cli', 'config.yaml'),
+			'logging:\n  level: info\n',
+			'utf8',
+		);
+		writeFileSync(
+			join(home, '.sinyuk-cli', 'features', 'hello-world', 'config.yaml'),
+			'includeHidden: false\n',
 			'utf8',
 		);
 
@@ -32,6 +34,7 @@ describe('hello-world ci fail-fast smoke', () => {
 			env: {
 				...process.env,
 				HOME: home,
+				USERPROFILE: home,
 				CI: '1',
 			},
 			reject: false,

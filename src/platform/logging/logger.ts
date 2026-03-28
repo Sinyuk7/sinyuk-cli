@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+
+import { getSinyukHomePath } from '../home.js';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -12,7 +13,7 @@ export type RunLogger = {
 };
 
 function getLogDirPath(): string {
-	return join(homedir(), '.sinyuk-cli', 'logs');
+	return join(getSinyukHomePath(), 'logs');
 }
 
 function writeLogLine(
@@ -36,11 +37,11 @@ function writeLogLine(
 /**
 """Create a scoped JSON logger bound to one execution run id.
 
-INTENT: 为每次执行创建可追溯的结构化日志写入器
+INTENT: Create structured per-run logging without leaking log path details into feature code
 INPUT: runId
 OUTPUT: RunLogger
-SIDE EFFECT: 创建 ~/.sinyuk-cli/logs/ 并写入 JSONL 日志文件
-FAILURE: 当目录或文件写入失败时抛出 Node.js 文件系统错误
+SIDE EFFECT: Create <SINYUK_HOME>/logs and append JSONL records to the daily log file
+FAILURE: Propagate filesystem write errors from Node.js
 """
  */
 export function createRunLogger(runId: string): RunLogger {
