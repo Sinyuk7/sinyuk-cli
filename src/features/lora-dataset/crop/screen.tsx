@@ -1,10 +1,17 @@
 import React, { useEffect, useRef } from 'react';
 import { Box, Text, render } from 'ink';
-import { ConfirmInput, ProgressBar, Select, Spinner, StatusMessage, TextInput } from '@inkjs/ui';
+import {
+	ConfirmInput,
+	ProgressBar,
+	Select,
+	Spinner,
+	StatusMessage,
+	TextInput,
+} from '@inkjs/ui';
 import { useStore } from 'zustand';
 
 import type { FeatureScreenProps } from '../../../shared/feature-screen.js';
-import { formatCropProfileId } from '../shared/schema.js';
+import { RatioChecklist } from './ratio-checklist.js';
 import { createCropStore } from './store.js';
 
 type CropScreenProps = FeatureScreenProps & {
@@ -15,7 +22,7 @@ type CropScreenProps = FeatureScreenProps & {
 /**
  * Crop Action screen - Activity root that renders sub-views by store.step.
  *
- * INTENT: Thin UI adapter driven entirely by Zustand store state
+ * INTENT: Thin UI adapter driven entirely by crop planner store state
  * INPUT: FeatureScreenProps
  * OUTPUT: React element tree
  * SIDE EFFECT: Creates crop store on mount; store actions perform I/O
@@ -34,11 +41,15 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 	const step = useStore(store, (s) => s.step);
 	const pathInput = useStore(store, (s) => s.pathInput);
 	const scanResult = useStore(store, (s) => s.scanResult);
-	const cropProfiles = useStore(store, (s) => s.cropProfiles);
-	const selectedProfileId = useStore(store, (s) => s.selectedProfileId);
-	const cropResult = useStore(store, (s) => s.cropResult);
-	const cropProgress = useStore(store, (s) => s.cropProgress);
-	const pauseMessageLines = useStore(store, (s) => s.pauseMessageLines);
+	const ratioStats = useStore(store, (s) => s.ratioStats);
+	const availableResolutions = useStore(store, (s) => s.availableResolutions);
+	const selectedRatios = useStore(store, (s) => s.selectedRatios);
+	const resolutionByRatio = useStore(store, (s) => s.resolutionByRatio);
+	const resolutionCursor = useStore(store, (s) => s.resolutionCursor);
+	const cropPlan = useStore(store, (s) => s.cropPlan);
+	const runResult = useStore(store, (s) => s.runResult);
+	const currentSpecProgress = useStore(store, (s) => s.currentSpecProgress);
+	const currentImageProgress = useStore(store, (s) => s.currentImageProgress);
 	const errorMessage = useStore(store, (s) => s.errorMessage);
 	const actions = useStore(store, (s) => s.actions);
 
@@ -51,7 +62,7 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 	if (step === 'input') {
 		return (
 			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - crop</Text>
+				<Text color="blueBright">lora-dataset - crop planner</Text>
 				<Text>Enter dataset path:</Text>
 				<TextInput
 					defaultValue={pathInput}
@@ -69,71 +80,171 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 		return <Spinner label={`Scanning ${pathInput}...`} />;
 	}
 
-	if (step === 'profile') {
-		const profileOptions = cropProfiles.map((profile) => ({
-			value: formatCropProfileId(profile),
-			label: `${profile.ratio} @ ${profile.longEdge}px`,
+	if (step === 'scan-preview' && scanResult) {
+		const extensionSummary = Object.entries(scanResult.extensionCounts)
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([extension, count]) => `${extension}: ${count}`)
+			.join(', ');
+
+		return (
+			<Box flexDirection="column" gap={1}>
+				<Text color="blueBright">lora-dataset - crop - scan preview</Text>
+				<Text>Path: {scanResult.basePath}</Text>
+				<Text>Images: {scanResult.images.length}</Text>
+				<Text>Extensions: {extensionSummary || 'none'}</Text>
+				<Text>Closest ratio distribution:</Text>
+				{ratioStats.map((stat) => (
+					<Text key={stat.ratio}>
+						{'  '}
+						{stat.ratio}: {stat.count}
+					</Text>
+				))}
+				<Text>Continue to ratio selection? [Y/n]</Text>
+				<ConfirmInput
+					onConfirm={() => actions.openRatioSelection()}
+					onCancel={props.onExit}
+				/>
+			</Box>
+		);
+	}
+
+	if (step === 'ratio-select') {
+		const options = ratioStats.map((stat) => ({
+			ratio: stat.ratio,
+			count: stat.count,
+			selected: selectedRatios.includes(stat.ratio),
 		}));
 
 		return (
 			<Box flexDirection="column" gap={1}>
-				<Text color="blueBright">lora-dataset - crop - profile</Text>
-				<Text>Found {scanResult?.images.length ?? 0} images.</Text>
-				<Text>Select crop profile:</Text>
-				<Select
-					options={profileOptions}
-					defaultValue={selectedProfileId ?? undefined}
-					onChange={(value) => actions.selectProfile(value)}
+				<Text color="blueBright">lora-dataset - crop - ratios</Text>
+				<Text>Select one or more ratios.</Text>
+				<Text dimColor>Use Up/Down to move, Space to toggle, Enter to continue.</Text>
+				<RatioChecklist
+					options={options}
+					onToggle={actions.toggleRatio}
+					onSubmit={actions.openResolutionSelection}
+					onCancel={props.onExit}
 				/>
-				<Text>Confirm and run crop? [Y/n]</Text>
-				<ConfirmInput onConfirm={() => void actions.runCrop()} onCancel={props.onExit} />
+				<Text>Selected: {selectedRatios.length}</Text>
+			</Box>
+		);
+	}
+
+	if (step === 'resolution-select') {
+		const currentRatio = selectedRatios[resolutionCursor];
+		const currentResolution =
+			(currentRatio && resolutionByRatio[currentRatio]) ??
+			availableResolutions[0] ??
+			0;
+		const resolutionOptions = availableResolutions.map((resolution) => ({
+			value: String(resolution),
+			label: `${resolution}px`,
+		}));
+		const chosenSummary = selectedRatios
+			.map((ratio) => {
+				const resolution = resolutionByRatio[ratio];
+				return resolution ? `${ratio} -> ${resolution}px` : `${ratio} -> pending`;
+			})
+			.join(', ');
+
+		return (
+			<Box flexDirection="column" gap={1}>
+				<Text color="blueBright">lora-dataset - crop - resolution</Text>
+				<Text>
+					Ratio {resolutionCursor + 1}/{selectedRatios.length}: {currentRatio}
+				</Text>
+				<Text>Choose the long-edge resolution for this ratio:</Text>
+				<Select
+					key={currentRatio}
+					options={resolutionOptions}
+					defaultValue={String(currentResolution)}
+					onChange={(value) =>
+						actions.setCurrentResolution(Number(value as string))
+					}
+				/>
+				<Text dimColor>Current plan: {chosenSummary}</Text>
+				<Text>
+					{resolutionCursor === selectedRatios.length - 1
+						? 'Build crop spec summary? [Y/n]'
+						: 'Confirm resolution and continue? [Y/n]'}
+				</Text>
+				<ConfirmInput
+					onConfirm={() => actions.confirmResolutionSelection()}
+					onCancel={props.onExit}
+				/>
+			</Box>
+		);
+	}
+
+	if (step === 'confirm' && scanResult) {
+		return (
+			<Box flexDirection="column" gap={1}>
+				<Text color="blueBright">lora-dataset - crop - confirm</Text>
+				<Text>Dataset: {scanResult.basePath}</Text>
+				<Text>Images: {scanResult.images.length}</Text>
+				<Text>Specs:</Text>
+				{cropPlan.map((spec) => (
+					<Text key={`${spec.ratio}-${spec.longEdge}`}>
+						{'  '}
+						{spec.ratio} @ {spec.longEdge}px {'->'} {spec.width}x{spec.height} {'->'}{' '}
+						{spec.outputDir}
+					</Text>
+				))}
+				<Text>Run crop plan now? [Y/n]</Text>
+				<ConfirmInput onConfirm={() => void actions.runPlan()} onCancel={props.onExit} />
 			</Box>
 		);
 	}
 
 	if (step === 'running') {
-		const percent = cropProgress && cropProgress.total > 0 ? Math.floor((cropProgress.current / cropProgress.total) * 100) : 0;
+		const percent =
+			currentImageProgress && currentImageProgress.total > 0
+				? Math.floor(
+						(currentImageProgress.current / currentImageProgress.total) * 100,
+					)
+				: 0;
+
 		return (
 			<Box flexDirection="column" gap={1}>
+				<Text color="blueBright">lora-dataset - crop - running</Text>
+				<Text>
+					{currentSpecProgress
+						? `Spec ${currentSpecProgress.current}/${currentSpecProgress.total}: ${currentSpecProgress.spec.ratio} @ ${currentSpecProgress.spec.longEdge}px`
+						: 'Preparing crop plan...'}
+				</Text>
 				<ProgressBar value={percent} />
-				<Text>{cropProgress ? `[${cropProgress.current}/${cropProgress.total}] ${cropProgress.file}` : 'Starting crop...'}</Text>
+				<Text>
+					{currentImageProgress
+						? `[${currentImageProgress.current}/${currentImageProgress.total}] ${currentImageProgress.file}`
+						: 'Starting crop...'}
+				</Text>
 			</Box>
 		);
 	}
 
-	if (step === 'bootstrap-paused') {
+	if (step === 'done' && runResult) {
 		return (
 			<Box flexDirection="column" gap={1}>
-				<StatusMessage variant="warning">Execution paused.</StatusMessage>
-				{pauseMessageLines.map((line, index) => (
-					<Text key={index}>{line}</Text>
+				<StatusMessage variant={runResult.hasFailures ? 'warning' : 'success'}>
+					Completed {runResult.totalSpecs} crop spec
+					{runResult.totalSpecs === 1 ? '' : 's'}
+					{runResult.hasFailures
+						? `, ${runResult.failedSpecs} with failures`
+						: ' successfully'}
+					.
+				</StatusMessage>
+				{runResult.specRuns.map((item) => (
+					<Text key={`${item.spec.ratio}-${item.spec.longEdge}`}>
+						{'  '}
+						{item.spec.ratio} @ {item.spec.longEdge}px: cropped {item.result.cropped},
+						skipped {item.result.skippedExisting}, failed {item.result.failed.length}
+					</Text>
 				))}
 				<Text>Exit? [Y/n]</Text>
 				<ConfirmInput
 					onConfirm={() => props.onExit(actions.complete())}
 					onCancel={() => props.onExit(actions.complete())}
-				/>
-			</Box>
-		);
-	}
-
-	if (step === 'done' && cropResult) {
-		const hasFailures = cropResult.failed.length > 0;
-		return (
-			<Box flexDirection="column" gap={1}>
-				<StatusMessage variant={hasFailures ? 'warning' : 'success'}>
-					Cropped {cropResult.cropped} images (skipped {cropResult.skippedExisting})
-					{hasFailures ? `, ${cropResult.failed.length} failed` : ''}.
-				</StatusMessage>
-				<Text dimColor>Output: {cropResult.outputDir}</Text>
-				<Text>Exit? [Y/n]</Text>
-				<ConfirmInput
-					onConfirm={() => {
-						props.onExit(actions.complete());
-					}}
-					onCancel={() => {
-						props.onExit(actions.complete());
-					}}
 				/>
 			</Box>
 		);
@@ -151,7 +262,7 @@ export function CropScreen(props: CropScreenProps): React.JSX.Element {
 /**
  * Run the crop Action as a standalone interactive Ink screen.
  *
- * INTENT: Reuse the same crop screen for CLI fallback when required inputs are missing
+ * INTENT: Reuse the same crop planner screen for CLI entry
  * INPUT: FeatureScreenProps plus optional initial path
  * OUTPUT: Promise<number> exit code
  * SIDE EFFECT: Mounts and unmounts an Ink app in the current process
@@ -166,7 +277,7 @@ export async function runCropInteractiveScreen(
 		const app = render(
 			<CropScreen
 				{...props}
-				onExit={(nextExitCode = 0) => {
+				onExit={(nextExitCode: number = 0) => {
 					exitCode = nextExitCode;
 					if (!unmounted) {
 						unmounted = true;

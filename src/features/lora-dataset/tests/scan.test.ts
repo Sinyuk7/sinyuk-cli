@@ -12,10 +12,12 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { discoverLoraImages } from '../shared/artifacts.js';
+import { loadCropScanContext } from '../shared/crop-plan.js';
 import { resolveLoraDatasetWorkspace } from '../shared/workspace.js';
 import {
 	TEST_1_DIR,
 	TEST_2_DIR,
+	createTempDir,
 	setupDatasetWorkspace,
 	withTempSinyukHome,
 } from './_test-helpers.js';
@@ -93,5 +95,25 @@ describe('scan — multi image (test-2)', () => {
 
 		const result = await discoverLoraImages(datasetPath);
 		expect(result.images).toHaveLength(5);
+	});
+
+	test('loads crop scan context without requiring prompt bootstrap', async () => {
+		const { cpSync, rmSync } = require('node:fs') as typeof import('node:fs');
+		const tempDataset = createTempDir('scan-dataset-');
+		cpSync(TEST_1_DIR, tempDataset, { recursive: true });
+
+		const workspace = resolveLoraDatasetWorkspace(tempDataset);
+		rmSync(workspace.workDirPath, { recursive: true, force: true });
+
+		const result = await loadCropScanContext({
+			pathInput: tempDataset,
+			ratioOptions: ['1:1', '3:4'],
+		});
+
+		expect(result.scanResult.images).toHaveLength(1);
+		expect(result.ratioStats).toEqual([
+			{ ratio: '1:1', count: 1 },
+			{ ratio: '3:4', count: 0 },
+		]);
 	});
 });

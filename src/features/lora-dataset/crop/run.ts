@@ -1,68 +1,55 @@
-import type { Writable } from 'node:stream';
-
-import type { FeatureScreenProps } from '../../../shared/feature-screen.js';
-import { LoraDatasetBootstrapPauseError } from '../shared/bootstrap.js';
+import type { LoraScanResult } from '../shared/artifacts.js';
 import { writeRunSummary } from '../shared/artifacts.js';
-import { loadScanContext, runCrop } from '../shared/pipeline.js';
-import { formatCropProfileId, getLoraDatasetFeatureConfig } from '../shared/schema.js';
+import { runCropPlan } from '../shared/pipeline.js';
+import type {
+	CropPlanSpecProgress,
+	CropSpec,
+	MultiCropRunResult,
+} from '../shared/types.js';
 
 /**
- * Canonical non-interactive CLI runner for the crop Action.
- *
- * INTENT: Single execution path for CLI crop command
- * INPUT: path, cropProfileId, configSnapshot, abortSignal, stdout
- * OUTPUT: Promise<number> exit code (0 = success, 2 = partial failure)
- * SIDE EFFECT: Scan files, crop images, write summary, stream progress to stdout
- * FAILURE: Throw when crop profile is missing/invalid or pipeline step fails
+"""Execute the planned crop specs and persist one multi-spec run summary.
+
+INTENT: Keep interactive crop execution on one canonical runner that owns summary writing and exit-code rules
+INPUT: scanResult, specs, abortSignal, optional progress callbacks
+OUTPUT: { exitCode, runResult }
+SIDE EFFECT: Executes crop output generation and writes run-summary.json under the dataset workspace
+FAILURE: Throw Error when execution or summary writing fails
+"""
  */
-export async function runCropNonInteractive(options: {
-	path: string;
-	cropProfileId: string;
-	configSnapshot: FeatureScreenProps['configSnapshot'];
+export async function executeCropPlan(options: {
+	scanResult: LoraScanResult;
+	specs: CropSpec[];
 	abortSignal: AbortSignal;
-	stdout: Writable;
-}): Promise<number> {
-	const config = getLoraDatasetFeatureConfig(options.configSnapshot);
-	let loaded;
-	try {
-		loaded = await loadScanContext({ pathInput: options.path });
-	} catch (error) {
-		if (error instanceof LoraDatasetBootstrapPauseError) {
-			for (const line of error.messageLines) {
-				options.stdout.write(`${line}\n`);
-			}
-			return 1;
-		}
-
-		throw error;
+	onSpecStart?: (progress: CropPlanSpecProgress) => void;
+	onImageProgress?: (progress: {
+		current: number;
+		total: number;
+		file: string;
+	}) => void;
+}): Promise<{
+	exitCode: number;
+	runResult: MultiCropRunResult;
+}> {
+	if (options.specs.length === 0) {
+		throw new Error('Crop plan is empty. Select at least one crop spec.');
 	}
 
-	options.stdout.write(`Scanned ${loaded.scanResult.images.length} images.\n`);
-
-	const profile = config.cropProfiles.find(
-		(p) => formatCropProfileId(p) === options.cropProfileId,
-	);
-	if (!profile) {
-		throw new Error(
-			`Crop profile "${options.cropProfileId}" not found. Available: ${config.cropProfiles.map(formatCropProfileId).join(', ')}`,
-		);
-	}
-
-	const cropResult = await runCrop({
-		scanResult: loaded.scanResult,
-		profile,
+	const runResult = await runCropPlan({
+		scanResult: options.scanResult,
+		specs: options.specs,
 		abortSignal: options.abortSignal,
-		onProgress: (progress) => {
-			options.stdout.write(
-				`[crop ${progress.current}/${progress.total}] ${progress.file}\n`,
-			);
-		},
+		onSpecStart: options.onSpecStart,
+		onImageProgress: options.onImageProgress,
 	});
 
-	await writeRunSummary(loaded.workspace.datasetPath, {
+	await writeRunSummary(options.scanResult.basePath, {
 		phase: 'completed',
-		crop: cropResult,
+		crop: runResult,
 	});
 
-	return cropResult.failed.length > 0 ? 2 : 0;
+	return {
+		exitCode: runResult.hasFailures ? 2 : 0,
+		runResult,
+	};
 }

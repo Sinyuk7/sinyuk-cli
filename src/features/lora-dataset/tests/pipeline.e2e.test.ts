@@ -52,7 +52,7 @@ describe('pipeline: caption → crop integration', { timeout: 300_000 }, () => {
 		// Step 2: Crop
 		const cropResult = await runCrop({
 			scanResult,
-			profile: FEATURE_CONFIG.cropProfiles[0]!,
+			profile: { ratio: '1:1', longEdge: 512 },
 			abortSignal: AbortSignal.timeout(30_000),
 		});
 		expect(cropResult.cropped).toBe(1);

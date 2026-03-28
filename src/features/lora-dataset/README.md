@@ -5,7 +5,7 @@ Feature domain for dataset captioning and crop preparation.
 ## What It Does
 
 - `caption`: scan dataset images, bootstrap local prompt, preview one sample, then run full caption batch
-- `crop`: scan dataset images, bootstrap local prompt, choose a crop profile, then generate `dataset-crop-*` outputs
+- `crop`: scan dataset images, preview ratio distribution, build a multi-spec crop plan, then generate `dataset-crop-*` outputs
 
 ## Execution Chain
 
@@ -59,7 +59,7 @@ Feature domain for dataset captioning and crop preparation.
 - Local prompt still equal to template:
   - pause immediately
   - return exit code `1`
-- Only edited local prompt is allowed to continue into preview / batch / crop
+- Only edited local prompt is allowed to continue into caption preview / batch
 - CLI and interactive flows share the same bootstrap logic
 - Dataset-local config is strict:
   - unknown fields fail immediately
@@ -75,7 +75,7 @@ Feature domain for dataset captioning and crop preparation.
   - fail-fast bootstrap for local prompt initialization
   - comprehensive feature-local test suite (scan, workspace, crop, caption, pipeline integration) — see [Tests](#tests) below
 - Stable assumptions:
-  - provider, scheduler, analysis, and crop profiles remain user-level config
+  - provider, scheduler, analysis, and crop options remain feature config
   - request tuning and caption assembly are dataset-local config
   - prompt is dataset-local, not YAML-configured
 - Known gaps:
@@ -108,8 +108,7 @@ Test data lives under `tests/.local-data/` (gitignored). Two datasets:
 
 ## Next Tasks
 
-- Decide whether `crop` should keep requiring prompt bootstrap long-term or split that concern later
-- Tighten summary/report UX for paused bootstrap vs completed runs
+- Tighten summary/report UX for multi-spec crop runs
 
 ## Quick Start For Next LLM
 

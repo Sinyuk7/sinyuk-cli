@@ -201,7 +201,7 @@ export async function runCaptionInteractiveScreen(
 		const app = render(
 			<CaptionScreen
 				{...props}
-				onExit={(nextExitCode = 0) => {
+				onExit={(nextExitCode: number = 0) => {
 					exitCode = nextExitCode;
 					if (!unmounted) {
 						unmounted = true;

@@ -7,11 +7,19 @@ import type { PlatformConfig } from '../../../platform/config/schema.js';
 import { ConfigError } from '../../../platform/errors.js';
 
 const RatioTextSchema = z.string().regex(/^\d+:\d+$/, 'must use WIDTH:HEIGHT format');
+const PositiveIntSchema = z.number().int().positive();
 
 export const LoraDatasetCropProfileSchema = z
 	.object({
 		ratio: RatioTextSchema,
-		longEdge: z.number().int().positive(),
+		longEdge: PositiveIntSchema,
+	})
+	.strict();
+
+export const LoraDatasetCropConfigSchema = z
+	.object({
+		ratioOptions: z.array(RatioTextSchema).min(1),
+		resolutionOptions: z.array(PositiveIntSchema).min(1),
 	})
 	.strict();
 
@@ -26,12 +34,12 @@ export const LoraDatasetProviderConfigSchema = z
 
 export const LoraDatasetSchedulerConfigSchema = z
 	.object({
-		concurrency: z.number().int().positive(),
-		timeoutSeconds: z.number().int().positive(),
+		concurrency: PositiveIntSchema,
+		timeoutSeconds: PositiveIntSchema,
 		maxRetries: z.number().int().min(0),
-		retryBaseDelayMs: z.number().int().positive(),
-		retryMaxDelayMs: z.number().int().positive(),
-		circuitBreakerFailureThreshold: z.number().int().positive(),
+		retryBaseDelayMs: PositiveIntSchema,
+		retryMaxDelayMs: PositiveIntSchema,
+		circuitBreakerFailureThreshold: PositiveIntSchema,
 	})
 	.strict()
 	.refine((value) => value.retryMaxDelayMs >= value.retryBaseDelayMs, {
@@ -41,7 +49,7 @@ export const LoraDatasetSchedulerConfigSchema = z
 
 export const LoraDatasetAnalysisConfigSchema = z
 	.object({
-		longEdge: z.number().int().positive(),
+		longEdge: PositiveIntSchema,
 		jpegQuality: z.number().int().min(1).max(100),
 	})
 	.strict();
@@ -51,7 +59,7 @@ export const LoraDatasetFeatureConfigSchema = z
 		provider: LoraDatasetProviderConfigSchema,
 		scheduler: LoraDatasetSchedulerConfigSchema,
 		analysis: LoraDatasetAnalysisConfigSchema,
-		cropProfiles: z.array(LoraDatasetCropProfileSchema).min(1),
+		crop: LoraDatasetCropConfigSchema,
 	})
 	.strict();
 
@@ -78,6 +86,7 @@ export const LoraDatasetDatasetConfigSchema = z
 	.strict();
 
 export type LoraDatasetCropProfile = z.infer<typeof LoraDatasetCropProfileSchema>;
+export type LoraDatasetCropConfig = z.infer<typeof LoraDatasetCropConfigSchema>;
 export type LoraDatasetFeatureConfig = z.infer<typeof LoraDatasetFeatureConfigSchema>;
 export type LoraDatasetProviderConfig = z.infer<typeof LoraDatasetProviderConfigSchema>;
 export type LoraDatasetSchedulerConfig = z.infer<typeof LoraDatasetSchedulerConfigSchema>;
@@ -145,6 +154,50 @@ export function loadLoraDatasetDatasetConfig(configPath: string): LoraDatasetDat
 	return parsed.data;
 }
 
-export function formatCropProfileId(profile: LoraDatasetCropProfile): string {
-	return `${profile.ratio}@${profile.longEdge}`;
+/**
+"""Convert a WIDTH:HEIGHT ratio string into a comparable decimal value.
+
+INTENT: Centralize crop ratio math so planning and execution use the same interpretation
+INPUT: ratio text like 3:4
+OUTPUT: decimal width/height ratio
+SIDE EFFECT: None
+FAILURE: Throw Error when the ratio format is invalid
+"""
+ */
+export function parseCropRatioValue(ratio: string): number {
+	const parsed = RatioTextSchema.safeParse(ratio);
+	if (!parsed.success) {
+		throw new Error(`Invalid crop ratio "${ratio}". Expected WIDTH:HEIGHT.`);
+	}
+
+	const [widthText, heightText] = ratio.split(':');
+	return Number(widthText) / Number(heightText);
+}
+
+/**
+"""Derive the target crop width and height from ratio and long edge.
+
+INTENT: Keep crop output sizing deterministic across planning, preview, and execution
+INPUT: crop profile with ratio and longEdge
+OUTPUT: { width, height }
+SIDE EFFECT: None
+FAILURE: Throw Error when the ratio format is invalid
+"""
+ */
+export function deriveCropTargetSize(profile: LoraDatasetCropProfile): {
+	width: number;
+	height: number;
+} {
+	const ratioValue = parseCropRatioValue(profile.ratio);
+	if (ratioValue >= 1) {
+		return {
+			width: profile.longEdge,
+			height: Math.round(profile.longEdge / ratioValue),
+		};
+	}
+
+	return {
+		width: Math.round(profile.longEdge * ratioValue),
+		height: profile.longEdge,
+	};
 }

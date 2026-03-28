@@ -18,6 +18,37 @@ export type CropRunResult = {
 	failed: FailedTask[];
 };
 
+export type CropRatioStat = {
+	ratio: string;
+	count: number;
+};
+
+export type CropSpec = {
+	ratio: string;
+	longEdge: number;
+	width: number;
+	height: number;
+	outputDir: string;
+};
+
+export type CropSpecRun = {
+	spec: CropSpec;
+	result: CropRunResult;
+};
+
+export type MultiCropRunResult = {
+	totalSpecs: number;
+	failedSpecs: number;
+	hasFailures: boolean;
+	specRuns: CropSpecRun[];
+};
+
+export type CropPlanSpecProgress = {
+	current: number;
+	total: number;
+	spec: CropSpec;
+};
+
 export type PreviewResult = {
 	relativePath: string;
 	caption: string;

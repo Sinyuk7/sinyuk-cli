@@ -2,36 +2,44 @@ import { createStore } from 'zustand/vanilla';
 
 import type { PlatformConfig } from '../../../platform/config/schema.js';
 import type { LoraScanResult } from '../shared/artifacts.js';
-import { LoraDatasetBootstrapPauseError } from '../shared/bootstrap.js';
-import { loadScanContext, runCrop } from '../shared/pipeline.js';
 import {
-	formatCropProfileId,
-	getLoraDatasetFeatureConfig,
-	type LoraDatasetCropProfile,
-} from '../shared/schema.js';
-import { writeRunSummary } from '../shared/artifacts.js';
-import type { CropRunResult } from '../shared/types.js';
-import type { LoraDatasetWorkspace } from '../shared/workspace.js';
+	buildCropPlan,
+	loadCropScanContext,
+} from '../shared/crop-plan.js';
+import { getLoraDatasetFeatureConfig } from '../shared/schema.js';
+import type {
+	CropPlanSpecProgress,
+	CropRatioStat,
+	CropSpec,
+	MultiCropRunResult,
+} from '../shared/types.js';
+import { executeCropPlan } from './run.js';
 
 type CropStep =
 	| 'input'
 	| 'scanning'
-	| 'profile'
+	| 'scan-preview'
+	| 'ratio-select'
+	| 'resolution-select'
+	| 'confirm'
 	| 'running'
-	| 'bootstrap-paused'
 	| 'done'
 	| 'error';
 
 export type CropState = {
 	step: CropStep;
 	pathInput: string;
-	workspace: LoraDatasetWorkspace | null;
 	scanResult: LoraScanResult | null;
-	cropProfiles: LoraDatasetCropProfile[];
-	selectedProfileId: string | null;
-	cropResult: CropRunResult | null;
-	cropProgress: { current: number; total: number; file: string } | null;
-	pauseMessageLines: string[];
+	ratioStats: CropRatioStat[];
+	availableRatios: string[];
+	availableResolutions: number[];
+	selectedRatios: string[];
+	resolutionByRatio: Record<string, number>;
+	resolutionCursor: number;
+	cropPlan: CropSpec[];
+	runResult: MultiCropRunResult | null;
+	currentSpecProgress: CropPlanSpecProgress | null;
+	currentImageProgress: { current: number; total: number; file: string } | null;
 	errorMessage: string | null;
 	exited: boolean;
 };
@@ -39,8 +47,12 @@ export type CropState = {
 export type CropActions = {
 	setPathInput: (value: string) => void;
 	startScan: (path?: string) => Promise<void>;
-	selectProfile: (profileId: string) => void;
-	runCrop: () => Promise<void>;
+	openRatioSelection: () => void;
+	toggleRatio: (ratio: string) => void;
+	openResolutionSelection: () => void;
+	setCurrentResolution: (resolution: number) => void;
+	confirmResolutionSelection: () => void;
+	runPlan: () => Promise<void>;
 	retryFromError: () => void;
 	complete: () => number;
 };
@@ -53,18 +65,31 @@ export type CreateCropStoreOptions = {
 	initialPath?: string;
 };
 
+function orderSelectedRatios(
+	availableRatios: string[],
+	selectedRatios: string[],
+	nextRatio: string,
+): string[] {
+	const nextSelected = selectedRatios.includes(nextRatio)
+		? selectedRatios.filter((ratio) => ratio !== nextRatio)
+		: [...selectedRatios, nextRatio];
+
+	return availableRatios.filter((ratio) => nextSelected.includes(ratio));
+}
+
 /**
  * Create the Zustand store for the crop Action.
  *
- * INTENT: Module-level singleton managing crop workflow step transitions
- * INPUT: config, abortSignal
+ * INTENT: Module-level singleton managing the interactive crop planner workflow
+ * INPUT: config snapshot and abort signal
  * OUTPUT: Zustand vanilla store
- * SIDE EFFECT: Actions trigger scan/crop via shared pipeline
+ * SIDE EFFECT: Actions trigger crop scan and multi-spec crop execution
  * FAILURE: Actions catch errors and transition to 'error' step
  */
 export function createCropStore(options: CreateCropStoreOptions) {
 	const config = getLoraDatasetFeatureConfig(options.configSnapshot);
-	const defaultProfileId = formatCropProfileId(config.cropProfiles[0]);
+	const availableRatios = config.crop.ratioOptions;
+	const availableResolutions = config.crop.resolutionOptions;
 	let returnStep: Exclude<CropStep, 'error'> = 'input';
 
 	const failTo = (
@@ -79,13 +104,17 @@ export function createCropStore(options: CreateCropStoreOptions) {
 	return createStore<CropStore>((set, get) => ({
 		step: 'input',
 		pathInput: options.initialPath ?? process.cwd(),
-		workspace: null,
 		scanResult: null,
-		cropProfiles: config.cropProfiles,
-		selectedProfileId: defaultProfileId,
-		cropResult: null,
-		cropProgress: null,
-		pauseMessageLines: [],
+		ratioStats: [],
+		availableRatios,
+		availableResolutions,
+		selectedRatios: [],
+		resolutionByRatio: {},
+		resolutionCursor: 0,
+		cropPlan: [],
+		runResult: null,
+		currentSpecProgress: null,
+		currentImageProgress: null,
 		errorMessage: null,
 		exited: false,
 
@@ -99,66 +128,179 @@ export function createCropStore(options: CreateCropStoreOptions) {
 				set({
 					step: 'scanning',
 					pathInput,
+					scanResult: null,
+					ratioStats: [],
+					selectedRatios: [],
+					resolutionByRatio: {},
+					resolutionCursor: 0,
+					cropPlan: [],
+					runResult: null,
+					currentSpecProgress: null,
+					currentImageProgress: null,
 					errorMessage: null,
-					cropResult: null,
-					pauseMessageLines: [],
 				});
+
 				try {
-					const loaded = await loadScanContext({ pathInput });
+					const loaded = await loadCropScanContext({
+						pathInput,
+						ratioOptions: availableRatios,
+					});
 					set({
-						step: 'profile',
-						workspace: loaded.workspace,
+						step: 'scan-preview',
 						scanResult: loaded.scanResult,
-						selectedProfileId: defaultProfileId,
+						ratioStats: loaded.ratioStats,
 					});
 				} catch (error) {
-					if (error instanceof LoraDatasetBootstrapPauseError) {
-						set({
-							step: 'bootstrap-paused',
-							workspace: null,
-							scanResult: null,
-							cropResult: null,
-							cropProgress: null,
-							pauseMessageLines: error.messageLines,
-						});
-						return;
-					}
-
 					failTo(set, (error as Error).message, 'input');
 				}
 			},
 
-			selectProfile(profileId) {
-				set({ selectedProfileId: profileId });
-			},
-
-			async runCrop() {
-				const { scanResult, selectedProfileId } = get();
-				if (!scanResult) return;
-
-				const profile = config.cropProfiles.find(
-					(p) => formatCropProfileId(p) === selectedProfileId,
-				);
-				if (!profile) {
-					failTo(set, 'No crop profile selected.', 'profile');
+			openRatioSelection() {
+				const { scanResult } = get();
+				if (!scanResult || scanResult.images.length === 0) {
+					failTo(set, 'No supported images found in the selected directory.', 'scan-preview');
 					return;
 				}
 
-				set({ step: 'running', cropProgress: null, errorMessage: null });
+				set({ step: 'ratio-select', errorMessage: null });
+			},
+
+			toggleRatio(ratio) {
+				const state = get();
+				const selectedRatios = orderSelectedRatios(
+					state.availableRatios,
+					state.selectedRatios,
+					ratio,
+				);
+				const resolutionByRatio = { ...state.resolutionByRatio };
+				if (!selectedRatios.includes(ratio)) {
+					delete resolutionByRatio[ratio];
+				}
+
+				set({
+					selectedRatios,
+					resolutionByRatio,
+				});
+			},
+
+			openResolutionSelection() {
+				const { selectedRatios, availableResolutions, resolutionByRatio } = get();
+				if (selectedRatios.length === 0) {
+					failTo(set, 'Select at least one crop ratio before continuing.', 'ratio-select');
+					return;
+				}
+
+				const nextResolutionByRatio = { ...resolutionByRatio };
+				const firstRatio = selectedRatios[0];
+				if (firstRatio && !nextResolutionByRatio[firstRatio]) {
+					nextResolutionByRatio[firstRatio] = availableResolutions[0] ?? 0;
+				}
+
+				set({
+					step: 'resolution-select',
+					resolutionCursor: 0,
+					resolutionByRatio: nextResolutionByRatio,
+					errorMessage: null,
+				});
+			},
+
+			setCurrentResolution(resolution) {
+				const { selectedRatios, resolutionCursor, resolutionByRatio } = get();
+				const currentRatio = selectedRatios[resolutionCursor];
+				if (!currentRatio) {
+					return;
+				}
+
+				set({
+					resolutionByRatio: {
+						...resolutionByRatio,
+						[currentRatio]: resolution,
+					},
+				});
+			},
+
+			confirmResolutionSelection() {
+				const {
+					scanResult,
+					selectedRatios,
+					resolutionByRatio,
+					resolutionCursor,
+					availableResolutions,
+				} = get();
+				const currentRatio = selectedRatios[resolutionCursor];
+				if (!scanResult || !currentRatio) {
+					return;
+				}
+
+				const nextResolutionByRatio = { ...resolutionByRatio };
+				if (!nextResolutionByRatio[currentRatio]) {
+					nextResolutionByRatio[currentRatio] = availableResolutions[0] ?? 0;
+				}
+
+				const nextCursor = resolutionCursor + 1;
+				if (nextCursor < selectedRatios.length) {
+					const nextRatio = selectedRatios[nextCursor];
+					if (nextRatio && !nextResolutionByRatio[nextRatio]) {
+						nextResolutionByRatio[nextRatio] = availableResolutions[0] ?? 0;
+					}
+
+					set({
+						step: 'resolution-select',
+						resolutionCursor: nextCursor,
+						resolutionByRatio: nextResolutionByRatio,
+						errorMessage: null,
+					});
+					return;
+				}
+
 				try {
-					const cropResult = await runCrop({
-						scanResult,
-						profile,
-						abortSignal: options.abortSignal,
-						onProgress: (cropProgress) => set({ cropProgress }),
+					const cropPlan = buildCropPlan({
+						basePath: scanResult.basePath,
+						selectedRatios,
+						resolutionByRatio: nextResolutionByRatio,
 					});
-					await writeRunSummary(scanResult.basePath, {
-						phase: 'completed',
-						crop: cropResult,
+
+					set({
+						step: 'confirm',
+						resolutionByRatio: nextResolutionByRatio,
+						cropPlan,
+						errorMessage: null,
 					});
-					set({ step: 'done', cropResult, cropProgress: null });
 				} catch (error) {
-					failTo(set, (error as Error).message, 'profile');
+					failTo(set, (error as Error).message, 'resolution-select');
+				}
+			},
+
+			async runPlan() {
+				const { scanResult, cropPlan } = get();
+				if (!scanResult || cropPlan.length === 0) {
+					return;
+				}
+
+				set({
+					step: 'running',
+					runResult: null,
+					currentSpecProgress: null,
+					currentImageProgress: null,
+					errorMessage: null,
+				});
+
+				try {
+					const { runResult } = await executeCropPlan({
+						scanResult,
+						specs: cropPlan,
+						abortSignal: options.abortSignal,
+						onSpecStart: (currentSpecProgress) => set({ currentSpecProgress }),
+						onImageProgress: (currentImageProgress) => set({ currentImageProgress }),
+					});
+
+					set({
+						step: 'done',
+						runResult,
+						currentImageProgress: null,
+					});
+				} catch (error) {
+					failTo(set, (error as Error).message, 'confirm');
 				}
 			},
 
@@ -168,9 +310,11 @@ export function createCropStore(options: CreateCropStoreOptions) {
 
 			complete() {
 				const state = get();
-				const exitCode =
-					state.step === 'bootstrap-paused' ? 1 : state.cropResult?.failed.length ? 2 : 0;
-				if (state.exited) return exitCode;
+				const exitCode = state.runResult?.hasFailures ? 2 : 0;
+				if (state.exited) {
+					return exitCode;
+				}
+
 				set({ exited: true });
 				return exitCode;
 			},

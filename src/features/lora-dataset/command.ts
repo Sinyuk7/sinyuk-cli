@@ -6,12 +6,12 @@ import type { SinyukCliContext } from '../../cli/context.js';
 function writeDomainHelp(stdout: Writable): void {
 	stdout.write('lora-dataset actions:\n');
 	stdout.write('  caption  Run AI caption preview or full batch on dataset images.\n');
-	stdout.write('  crop     Batch crop dataset images to a configured ratio and long edge.\n');
+	stdout.write('  crop     Open the interactive crop planner for dataset images.\n');
 	stdout.write('\n');
 	stdout.write('Examples:\n');
 	stdout.write('  sinyuk-cli lora-dataset caption --path ./images\n');
 	stdout.write('  sinyuk-cli lora-dataset caption --path ./images --full --confirm-full\n');
-	stdout.write('  sinyuk-cli lora-dataset crop --path ./images --crop-profile 1:1@1024\n');
+	stdout.write('  sinyuk-cli lora-dataset crop --path ./images\n');
 }
 
 /**

@@ -61,10 +61,10 @@ export const FEATURE_CONFIG: LoraDatasetFeatureConfig = {
 		longEdge: 1024,
 		jpegQuality: 85,
 	},
-	cropProfiles: [
-		{ ratio: '1:1', longEdge: 512 },
-		{ ratio: '3:4', longEdge: 768 },
-	],
+	crop: {
+		ratioOptions: ['1:1', '3:4', '4:3'],
+		resolutionOptions: [512, 768, 1024],
+	},
 };
 
 export const DATASET_CONFIG: LoraDatasetDatasetConfig = {

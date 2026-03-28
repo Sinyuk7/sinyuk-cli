@@ -12,7 +12,10 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 
 import sharp from 'sharp';
 
-import type { LoraDatasetCropProfile } from './schema.js';
+import {
+	deriveCropTargetSize,
+	type LoraDatasetCropProfile,
+} from './schema.js';
 import {
 	getLoraDatasetWorkspaceDirName,
 	resolveLoraDatasetWorkspace,
@@ -45,31 +48,6 @@ function isExcludedDirectory(name: string): boolean {
 
 function toSafeResponseName(relativePath: string): string {
 	return createHash('sha1').update(relativePath).digest('hex');
-}
-
-function parseRatio(ratio: string): number {
-	const [widthText, heightText] = ratio.split(':');
-	const width = Number(widthText);
-	const height = Number(heightText);
-	return width / height;
-}
-
-function deriveTargetSize(profile: LoraDatasetCropProfile): { width: number; height: number } {
-	const ratioValue = parseRatio(profile.ratio);
-	const widthFromLongEdge = Math.round(profile.longEdge * ratioValue);
-	const heightFromLongEdge = Math.round(profile.longEdge / ratioValue);
-
-	if (ratioValue >= 1) {
-		return {
-			width: profile.longEdge,
-			height: Math.round(profile.longEdge / ratioValue),
-		};
-	}
-
-	return {
-		width: Math.round(profile.longEdge * ratioValue),
-		height: profile.longEdge,
-	};
 }
 
 async function discoverRecursive(options: {
@@ -213,7 +191,7 @@ export async function cropImageToPath(options: {
 	outputPath: string;
 	profile: LoraDatasetCropProfile;
 }): Promise<void> {
-	const targetSize = deriveTargetSize(options.profile);
+	const targetSize = deriveCropTargetSize(options.profile);
 	await ensureDirectory(dirname(options.outputPath));
 	await sharp(options.sourcePath)
 		.rotate()

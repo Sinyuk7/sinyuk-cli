@@ -31,7 +31,14 @@ import type {
 	LoraDatasetFeatureConfig,
 } from './schema.js';
 import { loadLoraDatasetDatasetConfig } from './schema.js';
-import type { BatchRunResult, CropRunResult, PreviewResult } from './types.js';
+import type {
+	BatchRunResult,
+	CropPlanSpecProgress,
+	CropRunResult,
+	CropSpec,
+	MultiCropRunResult,
+	PreviewResult,
+} from './types.js';
 import type { LoraDatasetWorkspace } from './workspace.js';
 
 function ensureNotAborted(signal: AbortSignal): void {
@@ -324,4 +331,57 @@ export async function runCrop(options: {
 	}
 
 	return result;
+}
+
+/**
+"""Execute the full ordered crop plan one spec at a time.
+
+INTENT: Reuse the single-spec crop primitive while giving the planner one canonical multi-spec execution path
+INPUT: scanResult, specs, abortSignal, onSpecStart, onImageProgress
+OUTPUT: MultiCropRunResult
+SIDE EFFECT: Read source images and captions, write crop outputs for each spec directory
+FAILURE: Throw Error when the run is aborted or a spec-level execution fails before per-item capture
+"""
+ */
+export async function runCropPlan(options: {
+	scanResult: LoraScanResult;
+	specs: CropSpec[];
+	abortSignal: AbortSignal;
+	onSpecStart?: (progress: CropPlanSpecProgress) => void;
+	onImageProgress?: (progress: {
+		current: number;
+		total: number;
+		file: string;
+	}) => void;
+}): Promise<MultiCropRunResult> {
+	const specRuns: MultiCropRunResult['specRuns'] = [];
+
+	for (const [index, spec] of options.specs.entries()) {
+		ensureNotAborted(options.abortSignal);
+		options.onSpecStart?.({
+			current: index + 1,
+			total: options.specs.length,
+			spec,
+		});
+
+		const result = await runCrop({
+			scanResult: options.scanResult,
+			profile: {
+				ratio: spec.ratio,
+				longEdge: spec.longEdge,
+			},
+			abortSignal: options.abortSignal,
+			onProgress: options.onImageProgress,
+		});
+
+		specRuns.push({ spec, result });
+	}
+
+	const failedSpecs = specRuns.filter((item) => item.result.failed.length > 0).length;
+	return {
+		totalSpecs: specRuns.length,
+		failedSpecs,
+		hasFailures: failedSpecs > 0,
+		specRuns,
+	};
 }

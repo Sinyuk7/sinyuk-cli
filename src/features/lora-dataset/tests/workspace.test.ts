@@ -56,7 +56,8 @@ describe('getLoraDatasetFeatureConfig', () => {
 		expect(config.provider.baseUrl).toBe('https://hk.n1n.ai/v1');
 		expect(config.provider.model).toBe('qwen3.5-122b-a10b');
 		expect(config.scheduler.concurrency).toBe(2);
-		expect(config.cropProfiles).toHaveLength(2);
+		expect(config.crop.ratioOptions).toEqual(['1:1', '3:4', '4:3']);
+		expect(config.crop.resolutionOptions).toEqual([512, 768, 1024]);
 	});
 
 	test('throws on missing feature section', () => {
@@ -67,9 +68,34 @@ describe('getLoraDatasetFeatureConfig', () => {
 		expect(() =>
 			getLoraDatasetFeatureConfig({
 				features: {
-					'lora-dataset': { provider: { baseUrl: 'not-a-url' }, cropProfiles: [] },
+					'lora-dataset': { provider: { baseUrl: 'not-a-url' }, crop: { ratioOptions: [], resolutionOptions: [] } },
 				},
 			}),
+		).toThrow('Invalid feature config');
+	});
+
+	test('throws on legacy cropProfiles config', () => {
+		expect(() =>
+			getLoraDatasetFeatureConfig({
+				features: {
+					'lora-dataset': {
+						provider: PROVIDER_CONFIG,
+						scheduler: {
+							concurrency: 2,
+							timeoutSeconds: 120,
+							maxRetries: 1,
+							retryBaseDelayMs: 50,
+							retryMaxDelayMs: 100,
+							circuitBreakerFailureThreshold: 3,
+						},
+						analysis: {
+							longEdge: 1024,
+							jpegQuality: 85,
+						},
+						cropProfiles: [{ ratio: '1:1', longEdge: 512 }],
+					},
+				},
+			} as never),
 		).toThrow('Invalid feature config');
 	});
 });

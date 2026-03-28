@@ -12,7 +12,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { discoverLoraImages } from '../shared/artifacts.js';
-import { runCrop } from '../shared/pipeline.js';
+import { buildCropPlan } from '../shared/crop-plan.js';
+import { runCrop, runCropPlan } from '../shared/pipeline.js';
 import {
 	TEST_1_DIR,
 	TEST_2_DIR,
@@ -122,6 +123,65 @@ describe('crop — multi image batch (test-2)', { timeout: 60_000 }, () => {
 		for (let i = 1; i <= 5; i++) {
 			expect(existsSync(join(result.outputDir, `image_${String(i).padStart(4, '0')}.jpg`))).toBe(true);
 		}
+	});
+
+	test('builds a multi-spec crop plan with derived target sizes', () => {
+		const plan = buildCropPlan({
+			basePath: '/tmp/example-dataset',
+			selectedRatios: ['1:1', '3:4', '16:9'],
+			resolutionByRatio: {
+				'1:1': 512,
+				'3:4': 768,
+				'16:9': 1024,
+			},
+		});
+
+		expect(plan).toEqual([
+			expect.objectContaining({
+				ratio: '1:1',
+				longEdge: 512,
+				width: 512,
+				height: 512,
+			}),
+			expect.objectContaining({
+				ratio: '3:4',
+				longEdge: 768,
+				width: 576,
+				height: 768,
+			}),
+			expect.objectContaining({
+				ratio: '16:9',
+				longEdge: 1024,
+				width: 1024,
+				height: 576,
+			}),
+		]);
+	});
+
+	test('runs multiple crop specs and keeps separate output directories', async () => {
+		const { datasetPath } = setupDatasetWorkspace(TEST_2_DIR, env.getHomePath());
+		const scanResult = await discoverLoraImages(datasetPath);
+		const plan = buildCropPlan({
+			basePath: scanResult.basePath,
+			selectedRatios: ['1:1', '3:4'],
+			resolutionByRatio: {
+				'1:1': 512,
+				'3:4': 768,
+			},
+		});
+
+		const result = await runCropPlan({
+			scanResult,
+			specs: plan,
+			abortSignal: AbortSignal.timeout(60_000),
+		});
+
+		expect(result.totalSpecs).toBe(2);
+		expect(result.failedSpecs).toBe(0);
+		expect(result.hasFailures).toBe(false);
+		expect(result.specRuns).toHaveLength(2);
+		expect(existsSync(join(result.specRuns[0]!.spec.outputDir, 'image_0001.jpg'))).toBe(true);
+		expect(existsSync(join(result.specRuns[1]!.spec.outputDir, 'image_0001.jpg'))).toBe(true);
 	});
 });
 
