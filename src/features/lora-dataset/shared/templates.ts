@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 const TEMPLATE_PATHS = {
 	featureConfig: 'feature-config.yaml.example',
 	datasetConfig: 'dataset-config.yaml.example',
+	systemPrompt: 'system-prompt.txt',
 	userPrompt: 'user-prompt.txt.example',
 } as const;
 

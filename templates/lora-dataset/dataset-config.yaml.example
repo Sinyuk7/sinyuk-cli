@@ -1,7 +1,7 @@
 request:
-  temperature: 0.2
+  temperature: 0.4
   topP: 0.9
-  maxOutputTokens: 256
+  maxOutputTokens: 128
 
 captionAssembly:
   separator: ". "

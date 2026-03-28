@@ -1,5 +1,6 @@
 import { Cli } from 'clipanion';
 
+import { ConfigResetLoraDatasetCommand } from './commands/config-reset-lora-dataset.js';
 import { ConfigShowCommand } from './commands/config-show.js';
 import { InitCommand } from './commands/init.js';
 import { WorkbenchCommand } from './commands/workbench.js';
@@ -12,7 +13,14 @@ function createCli(): Cli<SinyukCliContext> {
 	const actionCommands = domains.flatMap((domain) => domain.actions.map((action) => action.getCommand()));
 
 	return Cli.from<SinyukCliContext>(
-		[ConfigShowCommand, InitCommand, WorkbenchCommand, ...domainCommands, ...actionCommands],
+		[
+			ConfigShowCommand,
+			ConfigResetLoraDatasetCommand,
+			InitCommand,
+			WorkbenchCommand,
+			...domainCommands,
+			...actionCommands,
+		],
 		{
 			binaryName: 'sinyuk-cli',
 			binaryLabel: 'Sinyuk CLI',

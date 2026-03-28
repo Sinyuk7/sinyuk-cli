@@ -10,14 +10,17 @@ scheduler:
   maxRetries: 2
   retryBaseDelayMs: 300
   retryMaxDelayMs: 2500
-  circuitBreakerFailureThreshold: 3
 
 analysis:
-  longEdge: 1024
-  jpegQuality: 85
+  longEdge: 896
+  jpegQuality: 80
 
-cropProfiles:
-  - ratio: 1:1
-    longEdge: 1024
-  - ratio: 3:4
-    longEdge: 1536
+crop:
+  ratioOptions:
+    - 1:1
+    - 3:4
+    - 4:3
+  resolutionOptions:
+    - 512
+    - 768
+    - 1024

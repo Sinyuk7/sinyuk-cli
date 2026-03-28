@@ -10,7 +10,7 @@
 
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import type {
 	LoraDatasetDatasetConfig,
@@ -26,6 +26,7 @@ import type { RunLogger } from '../../../platform/logging/logger.js';
 // ---------------------------------------------------------------------------
 
 export const LOCAL_DATA_DIR = resolve(__dirname, '.local-data');
+export const LOCAL_RUNS_DIR = join(LOCAL_DATA_DIR, '.runs');
 export const TEST_1_DIR = join(LOCAL_DATA_DIR, 'test-1-image-1');
 export const TEST_2_DIR = join(LOCAL_DATA_DIR, 'test-2-image-5');
 
@@ -55,7 +56,6 @@ export const FEATURE_CONFIG: LoraDatasetFeatureConfig = {
 		maxRetries: 1,
 		retryBaseDelayMs: 50,
 		retryMaxDelayMs: 100,
-		circuitBreakerFailureThreshold: 3,
 	},
 	analysis: {
 		longEdge: 1024,
@@ -106,6 +106,21 @@ export function createTempDir(prefix: string): string {
 	return mkdtempSync(join(tmpdir(), prefix));
 }
 
+/**
+"""Create one visible dataset runtime directory under the feature-local test data area.
+
+INTENT: Keep generated caption/crop artifacts inside the repo test directory so runs are inspectable after Vitest completes
+INPUT: sourceDir
+OUTPUT: absolute runtime dataset directory path
+SIDE EFFECT: Creates tests/.local-data/.runs and one unique child directory
+FAILURE: Propagate filesystem errors from Node.js
+"""
+ */
+function createLocalDatasetRunDir(sourceDir: string): string {
+	mkdirSync(LOCAL_RUNS_DIR, { recursive: true });
+	return mkdtempSync(join(LOCAL_RUNS_DIR, `${basename(sourceDir)}-run-`));
+}
+
 export function createNoopLogger(): RunLogger {
 	return {
 		debug() {},
@@ -141,16 +156,16 @@ captionAssembly:
 }
 
 /**
- * Copy a source test-data directory into a fresh temp dir and prepare workspace with prompt.
+ * Copy a source test-data directory into a feature-local runtime dir and prepare workspace with prompt.
  *
- * INTENT: Isolate each test run in its own temp dir with correct workspace structure
+ * INTENT: Isolate each test run while keeping generated artifacts visible under tests/.local-data/.runs
  */
 export function setupDatasetWorkspace(
 	sourceDir: string,
 	homePath: string,
 ): { datasetPath: string; homePath: string } {
 	const { cpSync } = require('node:fs') as typeof import('node:fs');
-	const datasetPath = createTempDir('e2e-dataset-');
+	const datasetPath = createLocalDatasetRunDir(sourceDir);
 	cpSync(sourceDir, datasetPath, { recursive: true });
 
 	const templatePath = join(homePath, 'features', 'lora-dataset', 'prompts', 'user-prompt.txt.example');

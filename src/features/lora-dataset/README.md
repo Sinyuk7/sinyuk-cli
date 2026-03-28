@@ -103,8 +103,9 @@ TEST_LORA_API_KEY=sk-xxx npx vitest run src/features/lora-dataset/tests/
 ```
 
 Test data lives under `tests/.local-data/` (gitignored). Two datasets:
-- `test-1-image-1` — single image, used for unit-level pipeline validation
-- `test-2-image-5` — 5 images, used for concurrency/batch/multi-image scenarios
+- `test-1-image-1` - single image, used for unit-level pipeline validation
+- `test-2-image-5` - 5 images, used for concurrency/batch/multi-image scenarios
+- Runtime copies for test executions are materialized under `tests/.local-data/.runs/`, so generated `_lora_dataset/`, `raw/*.json`, caption `.txt`, and `dataset-crop-*` outputs stay inspectable after the test run
 
 ## Next Tasks
 

@@ -7,6 +7,57 @@ import type {
 	LoraDatasetFeatureConfig,
 	LoraDatasetProviderConfig,
 } from './schema.js';
+import { readLoraDatasetTemplate } from './templates.js';
+
+type OpenAiChatTextPart = {
+	type: 'text';
+	text: string;
+};
+
+type OpenAiChatImagePart = {
+	type: 'image_url';
+	image_url: {
+		url: string;
+	};
+};
+
+type OpenAiAssistantContentPart = {
+	text?: string;
+};
+
+type OpenAiChatResponseMessage = {
+	role?: string;
+	content?: string | OpenAiAssistantContentPart[];
+	reasoning_content?: string | null;
+};
+
+export type OpenAiChatCompletionRequest = {
+	model: string;
+	temperature: number;
+	top_p: number;
+	max_tokens: number;
+	messages: [
+		{
+			role: 'system';
+			content: string;
+		},
+		{
+			role: 'user';
+			content: Array<OpenAiChatImagePart | OpenAiChatTextPart>;
+		},
+	];
+};
+
+export type OpenAiChatCompletionResponse = {
+	choices?: Array<{
+		index?: number;
+		message?: OpenAiChatResponseMessage;
+		logprobs?: unknown;
+		finish_reason?: string | null;
+	}>;
+	output_text?: string;
+	[key: string]: unknown;
+};
 
 export class RetryableProviderError extends Error {
 	constructor(message: string) {
@@ -31,14 +82,9 @@ export class ProviderParseError extends Error {
 
 export type ProviderCaptionResult = {
 	responseText: string;
-	parsedPayload: unknown;
+	parsedPayload?: unknown;
 	caption: string;
-	rawResponse: unknown;
-};
-
-export type ProviderCircuitBreakerState = {
-	primaryConsecutiveFailures: number;
-	useFallbackForRestOfBatch: boolean;
+	rawResponse: OpenAiChatCompletionResponse;
 };
 
 function createTimeoutSignal(parent: AbortSignal, timeoutMs: number): {
@@ -79,18 +125,42 @@ async function readImageAsDataUrl(options: {
 	return `data:image/jpeg;base64,${resized.toString('base64')}`;
 }
 
-function buildRequestPayload(options: {
+function loadSystemPrompt(): string {
+	const prompt = readLoraDatasetTemplate('systemPrompt').trim();
+	if (prompt.length === 0) {
+		throw new Error('Bundled system prompt template is empty.');
+	}
+
+	return prompt;
+}
+
+/**
+"""Build the exact OpenAI-compatible chat completion payload for one caption request.
+
+INTENT: Keep provider request construction explicit, typed, and aligned with the reference lora-tagger contract
+INPUT: imageDataUrl, systemPrompt, userPrompt, featureConfig, datasetConfig
+OUTPUT: OpenAiChatCompletionRequest
+SIDE EFFECT: None
+FAILURE: None
+"""
+ */
+export function buildRequestPayload(options: {
 	imageDataUrl: string;
+	systemPrompt: string;
 	userPrompt: string;
 	featureConfig: LoraDatasetFeatureConfig;
 	datasetConfig: LoraDatasetDatasetConfig;
-}): Record<string, unknown> {
+}): OpenAiChatCompletionRequest {
 	return {
 		model: options.featureConfig.provider.model,
 		temperature: options.datasetConfig.request.temperature,
 		top_p: options.datasetConfig.request.topP,
 		max_tokens: options.datasetConfig.request.maxOutputTokens,
 		messages: [
+			{
+				role: 'system',
+				content: options.systemPrompt,
+			},
 			{
 				role: 'user',
 				content: [
@@ -113,10 +183,10 @@ function buildRequestPayload(options: {
 async function postChatCompletion(options: {
 	baseUrl: string;
 	apiKey: string;
-	payload: Record<string, unknown>;
+	payload: OpenAiChatCompletionRequest;
 	timeoutSeconds: number;
 	abortSignal: AbortSignal;
-}): Promise<unknown> {
+}): Promise<OpenAiChatCompletionResponse> {
 	const timeout = createTimeoutSignal(options.abortSignal, options.timeoutSeconds * 1000);
 
 	try {
@@ -132,7 +202,13 @@ async function postChatCompletion(options: {
 
 		const rawText = await response.text();
 		if (response.ok) {
-			return JSON.parse(rawText);
+			try {
+				return JSON.parse(rawText) as OpenAiChatCompletionResponse;
+			} catch (error) {
+				throw new ProviderParseError(
+					`Provider returned invalid JSON response: ${(error as Error).message}`,
+				);
+			}
 		}
 
 		if ([429, 500, 502, 503, 504].includes(response.status)) {
@@ -145,7 +221,11 @@ async function postChatCompletion(options: {
 			`Provider request failed ${response.status}: ${rawText.slice(0, 300)}`,
 		);
 	} catch (error) {
-		if (error instanceof RetryableProviderError || error instanceof ProviderFatalError) {
+		if (
+			error instanceof RetryableProviderError ||
+			error instanceof ProviderFatalError ||
+			error instanceof ProviderParseError
+		) {
 			throw error;
 		}
 
@@ -159,46 +239,78 @@ async function postChatCompletion(options: {
 	}
 }
 
-function extractResponseText(rawResponse: unknown): string {
-	if (typeof rawResponse !== 'object' || rawResponse === null) {
-		throw new ProviderParseError('Provider response is not an object.');
+async function requestChatCompletionWithFallback(options: {
+	config: LoraDatasetProviderConfig;
+	apiKey: string;
+	payload: OpenAiChatCompletionRequest;
+	timeoutSeconds: number;
+	abortSignal: AbortSignal;
+}): Promise<OpenAiChatCompletionResponse> {
+	const baseUrls = [options.config.baseUrl, options.config.fallbackBaseUrl].filter(
+		(value): value is string => typeof value === 'string' && value.length > 0,
+	);
+	let lastRetryableError: RetryableProviderError | null = null;
+
+	for (const baseUrl of baseUrls) {
+		try {
+			return await postChatCompletion({
+				baseUrl,
+				apiKey: options.apiKey,
+				payload: options.payload,
+				timeoutSeconds: options.timeoutSeconds,
+				abortSignal: options.abortSignal,
+			});
+		} catch (error) {
+			if (error instanceof RetryableProviderError) {
+				lastRetryableError = error;
+				continue;
+			}
+
+			throw error;
+		}
 	}
 
-	const record = rawResponse as Record<string, unknown>;
-	const choices = record.choices;
+	if (lastRetryableError) {
+		throw lastRetryableError;
+	}
+
+	throw new ProviderFatalError('No provider base URL configured.');
+}
+
+/**
+"""Extract only the assistant-visible content text from a chat completion response.
+
+INTENT: Separate model-facing caption text from raw metadata so captions never include the full API envelope or reasoning traces
+INPUT: rawResponse
+OUTPUT: assistant content text
+SIDE EFFECT: None
+FAILURE: Throw ProviderParseError when no assistant-visible content can be found
+"""
+ */
+export function extractAssistantContentText(
+	rawResponse: OpenAiChatCompletionResponse,
+): string {
+	const choices = rawResponse.choices;
 	if (Array.isArray(choices) && choices.length > 0) {
-		const first = choices[0];
-		if (typeof first === 'object' && first !== null) {
-			const message = (first as Record<string, unknown>).message;
-			if (typeof message === 'object' && message !== null) {
-				const content = (message as Record<string, unknown>).content;
-				if (typeof content === 'string') {
-					return content.trim();
-				}
+		const content = choices[0]?.message?.content;
+		if (typeof content === 'string') {
+			return content.trim();
+		}
 
-				if (Array.isArray(content)) {
-					const joined = content
-						.map((item) => {
-							if (typeof item === 'object' && item !== null) {
-								const text = (item as Record<string, unknown>).text;
-								return typeof text === 'string' ? text : '';
-							}
+		if (Array.isArray(content)) {
+			const joined = content
+				.map((item) => (typeof item.text === 'string' ? item.text : ''))
+				.filter(Boolean)
+				.join('\n')
+				.trim();
 
-							return '';
-						})
-						.filter(Boolean)
-						.join('\n')
-						.trim();
-
-					if (joined.length > 0) {
-						return joined;
-					}
-				}
+			if (joined.length > 0) {
+				return joined;
 			}
 		}
 	}
 
-	const outputText = record.output_text;
+	const outputText = rawResponse.output_text;
 	if (typeof outputText === 'string' && outputText.trim().length > 0) {
 		return outputText.trim();
 	}
@@ -212,9 +324,9 @@ function extractJsonText(responseText: string): string {
 		return stripped;
 	}
 
-	const objectMatch = stripped.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
-	if (objectMatch?.[1]) {
-		return objectMatch[1].trim();
+	const codeBlockMatch = stripped.match(/```(?:json)?\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*```/);
+	if (codeBlockMatch?.[1]) {
+		return codeBlockMatch[1].trim();
 	}
 
 	const firstBrace = stripped.indexOf('{');
@@ -223,7 +335,13 @@ function extractJsonText(responseText: string): string {
 		return stripped.slice(firstBrace, lastBrace + 1);
 	}
 
-	throw new ProviderParseError('No JSON object found in provider response.');
+	const firstBracket = stripped.indexOf('[');
+	const lastBracket = stripped.lastIndexOf(']');
+	if (firstBracket !== -1 && lastBracket > firstBracket) {
+		return stripped.slice(firstBracket, lastBracket + 1);
+	}
+
+	throw new ProviderParseError('No JSON object or array found in provider response text.');
 }
 
 function flattenValue(input: unknown): string[] {
@@ -269,40 +387,39 @@ function assembleCaption(options: {
 	return flattenValue(options.parsedPayload).join(separator);
 }
 
-function chooseProviderBaseUrl(options: {
-	config: LoraDatasetProviderConfig;
-	circuitBreakerState?: ProviderCircuitBreakerState;
-}): string {
-	if (options.circuitBreakerState?.useFallbackForRestOfBatch && options.config.fallbackBaseUrl) {
-		return options.config.fallbackBaseUrl;
+/**
+"""Convert assistant content into the final caption, with JSON-first and text-fallback behavior.
+
+INTENT: Preserve structured caption assembly when the model returns JSON while still succeeding on plain-text content
+INPUT: responseText, datasetConfig
+OUTPUT: { caption, parsedPayload? }
+SIDE EFFECT: None
+FAILURE: None
+"""
+ */
+export function buildCaptionFromResponseText(options: {
+	responseText: string;
+	datasetConfig: LoraDatasetDatasetConfig;
+}): {
+	caption: string;
+	parsedPayload?: unknown;
+} {
+	const trimmedText = options.responseText.trim();
+
+	try {
+		const parsedPayload = JSON.parse(extractJsonText(trimmedText)) as unknown;
+		return {
+			parsedPayload,
+			caption: assembleCaption({
+				parsedPayload,
+				datasetConfig: options.datasetConfig,
+			}),
+		};
+	} catch {
+		return {
+			caption: trimmedText,
+		};
 	}
-
-	return options.config.baseUrl;
-}
-
-function markPrimaryFailure(options: {
-	featureConfig: LoraDatasetFeatureConfig;
-	circuitBreakerState?: ProviderCircuitBreakerState;
-}): void {
-	if (!options.circuitBreakerState || !options.featureConfig.provider.fallbackBaseUrl) {
-		return;
-	}
-
-	options.circuitBreakerState.primaryConsecutiveFailures += 1;
-	if (
-		options.circuitBreakerState.primaryConsecutiveFailures >=
-		options.featureConfig.scheduler.circuitBreakerFailureThreshold
-	) {
-		options.circuitBreakerState.useFallbackForRestOfBatch = true;
-	}
-}
-
-function markPrimarySuccess(circuitBreakerState?: ProviderCircuitBreakerState): void {
-	if (!circuitBreakerState) {
-		return;
-	}
-
-	circuitBreakerState.primaryConsecutiveFailures = 0;
 }
 
 /**
@@ -351,30 +468,13 @@ export function isRetryableProviderError(error: unknown): boolean {
 }
 
 /**
-"""Create one batch-local circuit breaker state for primary/fallback routing.
-
-INTENT: Keep fallback routing deterministic within one batch without introducing global mutable state
-INPUT: none
-OUTPUT: ProviderCircuitBreakerState
-SIDE EFFECT: None
-FAILURE: None
-"""
- */
-export function createProviderCircuitBreakerState(): ProviderCircuitBreakerState {
-	return {
-		primaryConsecutiveFailures: 0,
-		useFallbackForRestOfBatch: false,
-	};
-}
-
-/**
 """Call the configured vision provider and assemble the final caption text.
 
-INTENT: Unify request building, provider routing, response parsing, and caption assembly across preview and batch
-INPUT: imagePath, userPrompt, featureConfig, datasetConfig, apiKey, abortSignal, optional circuitBreakerState
+INTENT: Unify request building, provider transport, response parsing, and caption fallback behavior across preview and batch
+INPUT: imagePath, userPrompt, featureConfig, datasetConfig, apiKey, abortSignal
 OUTPUT: ProviderCaptionResult
-SIDE EFFECT: Issue one network request and resize one image for upload
-FAILURE: Throw RetryableProviderError, ProviderFatalError, or ProviderParseError when the request/parse fails
+SIDE EFFECT: Issue one provider request sequence and resize one image for upload
+FAILURE: Throw RetryableProviderError, ProviderFatalError, or ProviderParseError when transport or response extraction fails
 """
  */
 export async function requestCaptionForImage(options: {
@@ -384,60 +484,36 @@ export async function requestCaptionForImage(options: {
 	datasetConfig: LoraDatasetDatasetConfig;
 	apiKey: string;
 	abortSignal: AbortSignal;
-	circuitBreakerState?: ProviderCircuitBreakerState;
 }): Promise<ProviderCaptionResult> {
 	const imageDataUrl = await readImageAsDataUrl({
 		imagePath: options.imagePath,
 		longEdge: options.featureConfig.analysis.longEdge,
 		jpegQuality: options.featureConfig.analysis.jpegQuality,
 	});
-	const baseUrl = chooseProviderBaseUrl({
-		config: options.featureConfig.provider,
-		circuitBreakerState: options.circuitBreakerState,
-	});
 	const payload = buildRequestPayload({
 		imageDataUrl,
+		systemPrompt: loadSystemPrompt(),
 		userPrompt: options.userPrompt,
 		featureConfig: options.featureConfig,
 		datasetConfig: options.datasetConfig,
 	});
-
-	let rawResponse: unknown;
-
-	try {
-		rawResponse = await postChatCompletion({
-			baseUrl,
-			apiKey: options.apiKey,
-			payload,
-			timeoutSeconds: options.featureConfig.scheduler.timeoutSeconds,
-			abortSignal: options.abortSignal,
-		});
-		if (baseUrl === options.featureConfig.provider.baseUrl) {
-			markPrimarySuccess(options.circuitBreakerState);
-		}
-	} catch (error) {
-		if (
-			baseUrl === options.featureConfig.provider.baseUrl &&
-			isRetryableProviderError(error)
-		) {
-			markPrimaryFailure({
-				featureConfig: options.featureConfig,
-				circuitBreakerState: options.circuitBreakerState,
-			});
-		}
-		throw error;
-	}
-
-	const responseText = extractResponseText(rawResponse);
-	const parsedPayload = JSON.parse(extractJsonText(responseText)) as unknown;
+	const rawResponse = await requestChatCompletionWithFallback({
+		config: options.featureConfig.provider,
+		apiKey: options.apiKey,
+		payload,
+		timeoutSeconds: options.featureConfig.scheduler.timeoutSeconds,
+		abortSignal: options.abortSignal,
+	});
+	const responseText = extractAssistantContentText(rawResponse);
+	const captionResult = buildCaptionFromResponseText({
+		responseText,
+		datasetConfig: options.datasetConfig,
+	});
 
 	return {
 		responseText,
-		parsedPayload,
-		caption: assembleCaption({
-			parsedPayload,
-			datasetConfig: options.datasetConfig,
-		}),
+		parsedPayload: captionResult.parsedPayload,
+		caption: captionResult.caption,
 		rawResponse,
 	};
 }

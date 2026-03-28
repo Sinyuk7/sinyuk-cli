@@ -11,11 +11,14 @@
 import { writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { parse } from 'yaml';
+
 import { loadUserPrompt, readApiKey } from '../shared/provider.js';
 import {
 	getLoraDatasetFeatureConfig,
 	loadLoraDatasetDatasetConfig,
 } from '../shared/schema.js';
+import { readLoraDatasetTemplate } from '../shared/templates.js';
 import { resolveLoraDatasetWorkspace } from '../shared/workspace.js';
 import {
 	DATASET_CONFIG,
@@ -86,7 +89,6 @@ describe('getLoraDatasetFeatureConfig', () => {
 							maxRetries: 1,
 							retryBaseDelayMs: 50,
 							retryMaxDelayMs: 100,
-							circuitBreakerFailureThreshold: 3,
 						},
 						analysis: {
 							longEdge: 1024,
@@ -97,6 +99,24 @@ describe('getLoraDatasetFeatureConfig', () => {
 				},
 			} as never),
 		).toThrow('Invalid feature config');
+	});
+
+	test('validates bundled feature config template against current schema', () => {
+		const templateConfig = parse(readLoraDatasetTemplate('featureConfig'));
+		const config = getLoraDatasetFeatureConfig({
+			features: {
+				'lora-dataset': templateConfig,
+			},
+		});
+
+		expect(config.crop.ratioOptions).toEqual(['1:1', '3:4', '4:3']);
+		expect(config.crop.resolutionOptions).toEqual([512, 768, 1024]);
+	});
+
+	test('loads bundled system prompt template', () => {
+		const systemPrompt = readLoraDatasetTemplate('systemPrompt').trim();
+		expect(systemPrompt).toContain('Output strict JSON only.');
+		expect(systemPrompt.length).toBeGreaterThan(20);
 	});
 });
 

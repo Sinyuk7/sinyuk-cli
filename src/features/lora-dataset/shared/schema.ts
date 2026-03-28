@@ -39,7 +39,6 @@ export const LoraDatasetSchedulerConfigSchema = z
 		maxRetries: z.number().int().min(0),
 		retryBaseDelayMs: PositiveIntSchema,
 		retryMaxDelayMs: PositiveIntSchema,
-		circuitBreakerFailureThreshold: PositiveIntSchema,
 	})
 	.strict()
 	.refine((value) => value.retryMaxDelayMs >= value.retryBaseDelayMs, {

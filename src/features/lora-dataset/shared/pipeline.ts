@@ -17,7 +17,6 @@ import {
 } from './artifacts.js';
 import { ensureLoraDatasetPromptReady } from './bootstrap.js';
 import {
-	createProviderCircuitBreakerState,
 	isRetryableProviderError,
 	loadUserPrompt,
 	readApiKey,
@@ -144,7 +143,6 @@ async function captionOneImage(options: {
 	datasetConfig: LoraDatasetDatasetConfig;
 	executionContext: ExecutionContext;
 	apiKey: string;
-	circuitBreakerState: ReturnType<typeof createProviderCircuitBreakerState>;
 }): Promise<{ status: 'skipped' | 'captioned' }> {
 	if (await isValidTextArtifact(options.item.captionPath)) {
 		return { status: 'skipped' };
@@ -157,7 +155,6 @@ async function captionOneImage(options: {
 		datasetConfig: options.datasetConfig,
 		apiKey: options.apiKey,
 		abortSignal: options.executionContext.abortSignal,
-		circuitBreakerState: options.circuitBreakerState,
 	});
 	await writeCaptionArtifacts({
 		image: options.item,
@@ -188,7 +185,6 @@ export async function runBatch(options: {
 }): Promise<BatchRunResult> {
 	const prompt = await loadUserPrompt(options.workspace.promptPath);
 	const apiKey = readApiKey(options.config.provider, options.executionContext.envSnapshot);
-	const circuitBreakerState = createProviderCircuitBreakerState();
 	const queueResult = await runScheduledTasks({
 		items: options.scanResult.images.map((item) => ({ ...item, key: item.relativePath })),
 		concurrency: options.concurrencyOverride ?? options.config.scheduler.concurrency,
@@ -206,7 +202,6 @@ export async function runBatch(options: {
 				datasetConfig: options.datasetConfig,
 				executionContext: options.executionContext,
 				apiKey,
-				circuitBreakerState,
 			}),
 	});
 
