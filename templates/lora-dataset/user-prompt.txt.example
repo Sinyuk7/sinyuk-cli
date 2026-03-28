@@ -2,15 +2,15 @@ Analyze this portrait image and output ONLY valid English JSON using this exact 
 
 {"subject":"", "action":"","clothing":"","appearance":"","props":"","scene":"","view":"","lighting":"","style":""}
 
-Field definitions (use short natural phrases):
-- subject: main subject
-- action: pose, state, gaze, or expression
-- clothing: garments, structure, material, fit, accessories (HIGH PRIORITY)
-- appearance: hair, skin, physical traits
+Field definitions (use short natural phrases; each field must start with a capital letter):
+- subject: main subject with basic identity traits (gender, age, ethnicity if clearly visible)
+- action: use "The subject is ..." structure for pose, state, gaze, or expression
+- clothing: use "The subject is wearing ..." for garments, structure, material, fit, accessories (HIGH PRIORITY)
+- appearance: use "The subject has ..." for hair, skin, physical traits
 - props: objects held or nearby (optional, keep minimal)
 - view: MUST include shot type, angle, camera position, and focal length
 - lighting: key light, fill light, rim/back light, direction, contrast, color temp
-- style: visual style; 1-2 words only
+- style: visual style; 2-3 words only
 - scene: environment, background, spatial context; use 3-6 words, noun phrases only
 
 Constraints:

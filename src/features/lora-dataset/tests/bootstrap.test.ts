@@ -3,10 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import {
-	LoraDatasetBootstrapPauseError,
-	ensureLoraDatasetPromptReady,
-} from '../shared/bootstrap.js';
+import { ensureLoraDatasetPromptReady } from '../shared/bootstrap.js';
 import { readLoraDatasetTemplate } from '../shared/templates.js';
 import { resolveLoraDatasetWorkspace } from '../shared/workspace.js';
 
@@ -39,23 +36,20 @@ async function writePromptTemplate(homePath: string, content: string): Promise<v
 describe('ensureLoraDatasetPromptReady', () => {
 	afterEach(() => restoreSinyukHome());
 
-	test('copies the prompt template into the dataset workspace and pauses on first run', async () => {
+	test('copies the prompt template into the dataset workspace and continues on first run', async () => {
 		const homePath = createTempDir('sinyuk-home-');
 		const datasetPath = createTempDir('sinyuk-dataset-');
 		process.env.SINYUK_HOME = homePath;
 		const bundledPromptTemplate = readLoraDatasetTemplate('userPrompt');
 		await writePromptTemplate(homePath, bundledPromptTemplate);
 
-		await expect(ensureLoraDatasetPromptReady(datasetPath)).rejects.toBeInstanceOf(
-			LoraDatasetBootstrapPauseError,
-		);
-
 		const workspace = resolveLoraDatasetWorkspace(datasetPath);
+		await expect(ensureLoraDatasetPromptReady(datasetPath)).resolves.toEqual(workspace);
 		await expect(readFile(workspace.promptPath, 'utf8')).resolves.toBe(bundledPromptTemplate);
 		await expect(readFile(workspace.configPath, 'utf8')).resolves.toContain('request:');
 	});
 
-	test('pauses when the dataset-local prompt still matches the template', async () => {
+	test('accepts dataset-local prompt that still matches the template', async () => {
 		const homePath = createTempDir('sinyuk-home-');
 		const datasetPath = createTempDir('sinyuk-dataset-');
 		process.env.SINYUK_HOME = homePath;
@@ -75,9 +69,7 @@ describe('ensureLoraDatasetPromptReady', () => {
 			'utf8',
 		);
 
-		await expect(ensureLoraDatasetPromptReady(datasetPath)).rejects.toBeInstanceOf(
-			LoraDatasetBootstrapPauseError,
-		);
+		await expect(ensureLoraDatasetPromptReady(datasetPath)).resolves.toEqual(workspace);
 	});
 
 	test('continues immediately after copying a customized feature-home prompt template on first run', async () => {

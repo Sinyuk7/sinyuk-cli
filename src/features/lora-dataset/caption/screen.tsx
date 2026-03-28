@@ -1,6 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { Box, Text, render } from 'ink';
-import { ConfirmInput, ProgressBar, Spinner, StatusMessage, TextInput } from '@inkjs/ui';
+import {
+	ConfirmInput,
+	PasswordInput,
+	ProgressBar,
+	Spinner,
+	StatusMessage,
+	TextInput,
+} from '@inkjs/ui';
 import { useStore } from 'zustand';
 
 import type { FeatureScreenProps } from '../../../shared/feature-screen.js';
@@ -59,12 +66,12 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 
 	const step = useStore(store, (s) => s.step);
 	const pathInput = useStore(store, (s) => s.pathInput);
+	const apiKeyEnvName = useStore(store, (s) => s.apiKeyEnvName);
 	const promptPreviewLines = useStore(store, (s) => s.promptPreviewLines);
 	const scanResult = useStore(store, (s) => s.scanResult);
 	const previewResult = useStore(store, (s) => s.previewResult);
 	const batchResult = useStore(store, (s) => s.batchResult);
 	const progress = useStore(store, (s) => s.progress);
-	const pauseMessageLines = useStore(store, (s) => s.pauseMessageLines);
 	const errorMessage = useStore(store, (s) => s.errorMessage);
 	const actions = useStore(store, (s) => s.actions);
 
@@ -135,6 +142,27 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 		);
 	}
 
+	if (step === 'api-key-input' && apiKeyEnvName) {
+		return (
+			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
+				<StatusMessage variant="warning">Missing provider API key.</StatusMessage>
+				<Text>Enter a value for {apiKeyEnvName}:</Text>
+				<PasswordInput
+					onChange={actions.setApiKeyInput}
+					onSubmit={(value) => {
+						actions.setApiKeyInput(value);
+						void actions.submitApiKey();
+					}}
+				/>
+				<Text dimColor>
+					The value is saved to this process and your Windows user environment, then execution
+					continues automatically.
+				</Text>
+				{errorMessage ? <StatusMessage variant="error">{errorMessage}</StatusMessage> : null}
+			</ScreenFrame>
+		);
+	}
+
 	if (step === 'preview-result' && previewResult) {
 		return (
 			<ScreenFrame breadcrumb={PREVIEW_BREADCRUMB}>
@@ -181,24 +209,6 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 						? `[${progress.completed}/${progress.total}] ${activeKey} failed=${progress.failed}`
 						: 'Starting...'}
 				</Text>
-			</ScreenFrame>
-		);
-	}
-
-	if (step === 'bootstrap-paused') {
-		return (
-			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
-				<StatusMessage variant="warning">Execution paused.</StatusMessage>
-				{pauseMessageLines.map((line, index) => (
-					<Text key={index} dimColor>
-						{line}
-					</Text>
-				))}
-				<Text>Exit? [Y/n]</Text>
-				<ConfirmInput
-					onConfirm={() => props.onExit(actions.complete())}
-					onCancel={() => props.onExit(actions.complete())}
-				/>
 			</ScreenFrame>
 		);
 	}

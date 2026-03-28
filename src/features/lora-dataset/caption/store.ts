@@ -3,7 +3,7 @@ import { createStore } from 'zustand/vanilla';
 import type { PlatformConfig } from '../../../platform/config/schema.js';
 import type { EntryMode, ExecutionContext } from '../../../platform/execution-context.js';
 import type { LoraScanResult } from '../shared/artifacts.js';
-import { LoraDatasetBootstrapPauseError } from '../shared/bootstrap.js';
+import { isMissingApiKeyError, persistApiKeyToEnvironment } from '../shared/api-key.js';
 import { readRememberedLoraDatasetPath, rememberLoraDatasetPath } from '../shared/last-path.js';
 import { loadScanContext, runBatch, runPreview } from '../shared/pipeline.js';
 import { getLoraDatasetFeatureConfig, type LoraDatasetDatasetConfig } from '../shared/schema.js';
@@ -15,17 +15,19 @@ type CaptionStep =
 	| 'input'
 	| 'scanning'
 	| 'empty'
+	| 'api-key-input'
 	| 'previewing'
 	| 'preview-result'
 	| 'confirm'
 	| 'running'
-	| 'bootstrap-paused'
 	| 'done'
 	| 'error';
 
 export type CaptionState = {
 	step: CaptionStep;
 	pathInput: string;
+	apiKeyInput: string;
+	apiKeyEnvName: string | null;
 	promptPreviewLines: string[];
 	datasetConfig: LoraDatasetDatasetConfig | null;
 	workspace: LoraDatasetWorkspace | null;
@@ -33,18 +35,19 @@ export type CaptionState = {
 	previewResult: PreviewResult | null;
 	batchResult: BatchRunResult | null;
 	progress: SchedulerProgress | null;
-	pauseMessageLines: string[];
 	errorMessage: string | null;
 	exited: boolean;
 };
 
 export type CaptionActions = {
 	setPathInput: (value: string) => void;
+	setApiKeyInput: (value: string) => void;
 	startScan: (path?: string) => Promise<void>;
 	returnToInput: () => void;
 	runPreview: () => Promise<void>;
 	openConfirm: () => void;
 	runBatch: () => Promise<void>;
+	submitApiKey: () => Promise<void>;
 	retryFromError: () => void;
 	complete: () => number;
 };
@@ -74,6 +77,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 	const config = getLoraDatasetFeatureConfig(options.configSnapshot);
 	const rememberedPath = readRememberedLoraDatasetPath();
 	let returnStep: Exclude<CaptionStep, 'error'> = 'input';
+	let pendingResumeAction: 'preview' | 'batch' | null = null;
 
 	const failTo = (
 		set: (partial: Partial<CaptionState>) => void,
@@ -87,6 +91,8 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 	return createStore<CaptionStore>((set, get) => ({
 		step: 'input',
 		pathInput: options.initialPath ?? rememberedPath ?? process.cwd(),
+		apiKeyInput: '',
+		apiKeyEnvName: null,
 		promptPreviewLines: [],
 		datasetConfig: null,
 		workspace: null,
@@ -94,7 +100,6 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 		previewResult: null,
 		batchResult: null,
 		progress: null,
-		pauseMessageLines: [],
 		errorMessage: null,
 		exited: false,
 
@@ -103,15 +108,20 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 				set({ pathInput: value });
 			},
 
+			setApiKeyInput(value) {
+				set({ apiKeyInput: value, errorMessage: null });
+			},
+
 			async startScan(path) {
 				const pathInput = path ?? get().pathInput;
 				set({
 					step: 'scanning',
 					pathInput,
+					apiKeyInput: '',
+					apiKeyEnvName: null,
 					errorMessage: null,
 					previewResult: null,
 					batchResult: null,
-					pauseMessageLines: [],
 				});
 				try {
 					const loaded = await loadScanContext({ pathInput });
@@ -135,21 +145,6 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 						promptPreviewLines: loaded.promptPreviewLines,
 					});
 				} catch (error) {
-					if (error instanceof LoraDatasetBootstrapPauseError) {
-						set({
-							step: 'bootstrap-paused',
-							datasetConfig: null,
-							workspace: null,
-							scanResult: null,
-							previewResult: null,
-							batchResult: null,
-							progress: null,
-							promptPreviewLines: [],
-							pauseMessageLines: error.messageLines,
-						});
-						return;
-					}
-
 					failTo(set, (error as Error).message, 'input');
 				}
 			},
@@ -161,7 +156,8 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 					previewResult: null,
 					batchResult: null,
 					progress: null,
-					pauseMessageLines: [],
+					apiKeyInput: '',
+					apiKeyEnvName: null,
 					errorMessage: null,
 				});
 			},
@@ -184,6 +180,17 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 					});
 					set({ step: 'preview-result', previewResult });
 				} catch (error) {
+					if (isMissingApiKeyError(error, config.provider.apiKeyEnv)) {
+						pendingResumeAction = 'preview';
+						set({
+							step: 'api-key-input',
+							apiKeyInput: '',
+							apiKeyEnvName: config.provider.apiKeyEnv,
+							errorMessage: null,
+						});
+						return;
+					}
+
 					failTo(set, (error as Error).message, 'input');
 				}
 			},
@@ -211,7 +218,53 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 					});
 					set({ step: 'done', batchResult, progress: null });
 				} catch (error) {
+					if (isMissingApiKeyError(error, config.provider.apiKeyEnv)) {
+						pendingResumeAction = 'batch';
+						set({
+							step: 'api-key-input',
+							apiKeyInput: '',
+							apiKeyEnvName: config.provider.apiKeyEnv,
+							progress: null,
+							errorMessage: null,
+						});
+						return;
+					}
+
 					failTo(set, (error as Error).message, 'confirm');
+				}
+			},
+
+			async submitApiKey() {
+				const { apiKeyInput, apiKeyEnvName } = get();
+				const nextApiKey = apiKeyInput.trim();
+				if (!apiKeyEnvName) {
+					set({ errorMessage: 'Missing target environment variable name.' });
+					return;
+				}
+
+				if (nextApiKey.length === 0) {
+					set({ errorMessage: 'API key cannot be empty.' });
+					return;
+				}
+
+				try {
+					await persistApiKeyToEnvironment(apiKeyEnvName, nextApiKey);
+					const resumeAction = pendingResumeAction;
+					pendingResumeAction = null;
+					set({
+						apiKeyInput: '',
+						apiKeyEnvName: null,
+						errorMessage: null,
+					});
+
+					if (resumeAction === 'batch') {
+						await get().actions.runBatch();
+						return;
+					}
+
+					await get().actions.runPreview();
+				} catch (error) {
+					set({ errorMessage: `Failed to save API key: ${(error as Error).message}` });
 				}
 			},
 
@@ -221,8 +274,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 
 			complete() {
 				const state = get();
-				const exitCode =
-					state.step === 'bootstrap-paused' ? 1 : state.batchResult?.failed.length ? 2 : 0;
+				const exitCode = state.batchResult?.failed.length ? 2 : 0;
 				if (state.exited) return exitCode;
 				set({ exited: true });
 				return exitCode;

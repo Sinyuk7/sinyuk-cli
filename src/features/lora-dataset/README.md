@@ -59,17 +59,17 @@ Feature domain for dataset captioning and crop preparation.
   - continue with that exact file as the only dataset-local request config
 - First run with no local prompt:
   - copy template to `<dataset>/_lora_dataset/user-prompt.txt`
-  - pause immediately
-  - return exit code `1`
-- Local prompt still equal to template:
-  - pause immediately
-  - return exit code `1`
-- Only edited local prompt is allowed to continue into caption preview / batch
+  - continue immediately
+- Local prompt is allowed to stay equal to the template
 - CLI and interactive flows share the same bootstrap logic
 - Dataset-local config is strict:
   - unknown fields fail immediately
   - missing required fields fail immediately
   - no fallback injection from global config into dataset config
+- Interactive caption flow:
+  - if the provider API key env var is missing, prompt for the token in-terminal
+  - save it to the current process and the Windows user environment
+  - continue preview / batch automatically after saving
 - Feature config reset is explicit:
   - `sinyuk-cli init` only creates the feature config if it is missing
   - `sinyuk-cli config reset lora-dataset --force` backs up the current feature-home config and prompt template files, then writes the latest bundled templates
@@ -80,7 +80,7 @@ Feature domain for dataset captioning and crop preparation.
   - feature-domain routing (`lora-dataset caption`, `lora-dataset crop`, bare domain help)
   - canonical runner split for `caption` and `crop`
   - dataset-local workspace contract with `_lora_dataset/`
-  - fail-fast bootstrap for local prompt initialization
+  - automatic bootstrap for local prompt initialization
   - explicit `config reset lora-dataset --force` recovery path for stale feature-home templates
   - comprehensive feature-local test suite (scan, workspace, crop, caption, pipeline integration) — see [Tests](#tests) below
 - Stable assumptions:
@@ -98,7 +98,7 @@ Test files live under `tests/` alongside the feature code. Shared fixtures and h
 | File | What It Tests | Needs API Key |
 |------|---------------|:---:|
 | `provider.test.ts` | Request payload contract, assistant content extraction, JSON-to-caption fallback | No |
-| `bootstrap.test.ts` | Prompt template copy, pause on first run, customization gate | ❌ |
+| `bootstrap.test.ts` | Prompt/config bootstrap copy and template-accepted startup behavior | ❌ |
 | `scan.test.ts` | Image discovery, path generation, exclusion rules | ❌ |
 | `workspace.test.ts` | Workspace paths, config validation, readApiKey, prompt loading | ❌ |
 | `crop.test.ts` | Sharp-based crop output, skip-on-rerun, caption copy, abort signal | ❌ |

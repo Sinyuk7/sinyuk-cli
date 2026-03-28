@@ -2,7 +2,6 @@ import type { Writable } from 'node:stream';
 
 import type { FeatureScreenProps } from '../../../shared/feature-screen.js';
 import { CliError } from '../../../platform/errors.js';
-import { LoraDatasetBootstrapPauseError } from '../shared/bootstrap.js';
 import { ProviderFatalError } from '../shared/provider.js';
 import { loadScanContext, runBatch, runPreview } from '../shared/pipeline.js';
 import { getLoraDatasetFeatureConfig } from '../shared/schema.js';
@@ -28,19 +27,7 @@ export async function runCaptionNonInteractive(options: {
 	stdout: Writable;
 }): Promise<number> {
 	const config = getLoraDatasetFeatureConfig(options.configSnapshot);
-	let loaded;
-	try {
-		loaded = await loadScanContext({ pathInput: options.path });
-	} catch (error) {
-		if (error instanceof LoraDatasetBootstrapPauseError) {
-			for (const line of error.messageLines) {
-				options.stdout.write(`${line}\n`);
-			}
-			return 1;
-		}
-
-		throw error;
-	}
+	const loaded = await loadScanContext({ pathInput: options.path });
 
 	if (loaded.scanResult.images.length === 0) {
 		throw new CliError(
