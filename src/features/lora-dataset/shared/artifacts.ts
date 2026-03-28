@@ -8,7 +8,7 @@ import {
 	stat,
 	writeFile,
 } from 'node:fs/promises';
-import { dirname, extname, join, relative, resolve } from 'node:path';
+import { dirname, extname, join, relative } from 'node:path';
 
 import sharp from 'sharp';
 
