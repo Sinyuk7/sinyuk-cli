@@ -1,5 +1,10 @@
 # MEMORY
 
+> **[SYSTEM DIRECTIVE: EXECUTOR RULE - DO NOT REMOVE]**
+> 1. **STRICT LENGTH LIMIT:** This file (`MEMORY.md`) MUST NEVER exceed 300 lines.
+> 2. **READ BEFORE WRITE:** Every time you are instructed to update or append to this file, you MUST read the entire document first.
+> 3. **AUTO-COMPRESS & PRUNE:** Before writing new content, evaluate the current line count. If the new addition will cause the file to exceed 300 lines, you MUST actively compress, summarize, or delete older/obsolete context to make room. Always prioritize the most current and critical architectural decisions.
+
 Updated: 2026-03-28
 
 ## Architecture: Launcher Activity + Feature Domain
@@ -74,6 +79,27 @@ features/
 | 7 | Domain help command | Show action list on bare domain invocation | Matches git/docker UX |
 | 8 | Run.ts per Action | Yes — each Action has own canonical runner | SSOT principle from AGENTS.md |
 | 9 | Step type definition | Each Action defines own step type independently | No premature shared types |
+| 10 | Config strategy | Feature Autonomy — zero merge | Global only has `logging`; each feature reads its own config from `~/.sinyuk-cli/features/<id>/config.yaml`; dataset config at `<dataset>/_lora_dataset/config.yaml` is strictly separate. No fallback injection, no layer merging. |
+| 11 | Config validation | Strict Zod schemas per layer | `.strict()` on all config schemas — unknown/typoed fields crash immediately. Template-driven init via physical `.example` file copies, no code defaults. |
+
+### Config Architecture (Dead-Simple Strategy)
+
+Four iron rules:
+1. **Template-Driven Init**: Physical file copies from `templates/`, no code defaults
+2. **Strict Schema Validation**: Zod `.strict()` to crash on unknown/typoed fields
+3. **No Fallback Injection**: Global and Dataset configs are strictly separate objects in memory
+4. **Forward Compatibility**: Users manually update configs on version upgrades; no auto-migration
+
+Three config layers (physically isolated, never merged):
+- **Core Config** `~/.sinyuk-cli/config.yaml` — only `logging.level`
+- **Feature Machine Config** `~/.sinyuk-cli/features/<id>/config.yaml` — API keys, concurrency, provider settings (read by each feature autonomously)
+- **Dataset Config** `<dataset>/_lora_dataset/config.yaml` — hyperparams, request tuning (read during action bootstrap)
+
+Key files:
+- `src/platform/config/schema.ts` — `CoreConfigSchema` (thin, only logging)
+- `src/platform/config/load-config.ts` — `loadCoreConfig()` (no merge logic)
+- `src/features/lora-dataset/shared/schema.ts` — feature-owned schemas + `loadLoraDatasetFeatureConfig()` / `loadLoraDatasetDatasetConfig()`
+- `src/platform/execution-context.ts` — passes `sinyukHomePath` down, not a merged config snapshot
 
 ### Pre-existing Issues (not from this refactor)
 
@@ -95,5 +121,3 @@ features/
 - **E2E tests that call real external APIs**: must read credentials from environment variables, set generous timeouts, and include clear skip logic when credentials are unavailable
 
 ### Dependencies Added
-
-- `zustand` — React state management (<1KB gzip), used for per-Action stores

@@ -1,3 +1,4 @@
+console.log("FILE LOADED");
 import { describe, expect, test } from 'vitest';
 
 import {
