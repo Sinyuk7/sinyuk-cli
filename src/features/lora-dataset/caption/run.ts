@@ -48,6 +48,7 @@ export async function runCaptionNonInteractive(options: {
 		const preview = await runPreview({
 			scanResult: loaded.scanResult,
 			config,
+			datasetConfig: loaded.datasetConfig,
 			workspace: loaded.workspace,
 			executionContext: options.createExecutionContext({ entryMode: 'cli', dryRun: false }),
 			previewFile: options.previewFile ?? null,
@@ -63,6 +64,7 @@ export async function runCaptionNonInteractive(options: {
 	const batch = await runBatch({
 		scanResult: loaded.scanResult,
 		config,
+		datasetConfig: loaded.datasetConfig,
 		workspace: loaded.workspace,
 		executionContext: options.createExecutionContext({ entryMode: 'cli', dryRun: false }),
 		concurrencyOverride: options.concurrencyOverride ?? null,

@@ -50,6 +50,7 @@ describe('ensureLoraDatasetPromptReady', () => {
 
 		const workspace = resolveLoraDatasetWorkspace(datasetPath);
 		await expect(readFile(workspace.promptPath, 'utf8')).resolves.toBe('template prompt\n');
+		await expect(readFile(workspace.configPath, 'utf8')).resolves.toContain('request:');
 	});
 
 	test('pauses when the dataset-local prompt still matches the template', async () => {
@@ -60,6 +61,11 @@ describe('ensureLoraDatasetPromptReady', () => {
 
 		const workspace = resolveLoraDatasetWorkspace(datasetPath);
 		mkdirSync(workspace.workDirPath, { recursive: true });
+		writeFileSync(
+			workspace.configPath,
+			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  keepSubjectFirst: true\n',
+			'utf8',
+		);
 		writeFileSync(workspace.promptPath, 'template prompt\r\n', 'utf8');
 
 		await expect(ensureLoraDatasetPromptReady(datasetPath)).rejects.toBeInstanceOf(
@@ -75,6 +81,11 @@ describe('ensureLoraDatasetPromptReady', () => {
 
 		const workspace = resolveLoraDatasetWorkspace(datasetPath);
 		mkdirSync(workspace.workDirPath, { recursive: true });
+		writeFileSync(
+			workspace.configPath,
+			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  keepSubjectFirst: true\n',
+			'utf8',
+		);
 		writeFileSync(workspace.promptPath, 'customized prompt\nwith trigger words\n', 'utf8');
 
 		await expect(ensureLoraDatasetPromptReady(datasetPath)).resolves.toEqual(workspace);

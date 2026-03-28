@@ -61,19 +61,21 @@ function buildProgressSnapshot(options: {
 }
 
 /**
-"""Run a bounded-concurrency task queue with retries and global slowdown protection.
+"""Run a bounded-concurrency task queue with per-worker retry jitter.
 
-INTENT: 为批量 caption 任务提供统一调度层，处理并发、重试、失败聚合和全局降速
-INPUT: items, concurrency, maxRetries, abortSignal, runTask, isRetryableError, onProgress
+INTENT: Keep the scheduler boring by using a fixed worker pool plus per-task retry backoff instead of dynamic concurrency scaling
+INPUT: items, concurrency, maxRetries, retryBaseDelayMs, retryMaxDelayMs, abortSignal, runTask, isRetryableError, onProgress
 OUTPUT: SchedulerResult
-SIDE EFFECT: 异步执行任务并通过 onProgress 推送运行快照
-FAILURE: 仅在 abortSignal 取消时抛出 Error；单项失败会聚合到结果中继续执行
+SIDE EFFECT: Execute async tasks and emit progress snapshots
+FAILURE: Throw Error only when abortSignal cancels the run; per-item failures are aggregated in the result
 """
  */
 export async function runScheduledTasks<TItem extends ScheduledTaskItem>(options: {
 	items: TItem[];
 	concurrency: number;
 	maxRetries: number;
+	retryBaseDelayMs: number;
+	retryMaxDelayMs: number;
 	abortSignal: AbortSignal;
 	runTask: (item: TItem, attempt: number) => Promise<ScheduledTaskOutcome>;
 	isRetryableError: (error: unknown) => boolean;
@@ -82,12 +84,11 @@ export async function runScheduledTasks<TItem extends ScheduledTaskItem>(options
 	const statusCounts: Record<string, number> = {};
 	const failed: FailedTask[] = [];
 	const activeWorkers = new Map<number, ActiveWorker>();
+	const backoffWorkers = new Set<number>();
 	const workerCount = Math.min(options.concurrency, Math.max(1, options.items.length));
 	let completed = 0;
 	let failedCount = 0;
 	let nextIndex = 0;
-	let slowdownUntil = 0;
-	let slowdownActive = false;
 
 	const emit = () =>
 		options.onProgress?.(
@@ -97,26 +98,38 @@ export async function runScheduledTasks<TItem extends ScheduledTaskItem>(options
 				failed: failedCount,
 				activeWorkers,
 				statusCounts,
-				slowdownActive,
+				slowdownActive: backoffWorkers.size > 0,
 			}),
 		);
 
-	const processOne = async (item: TItem, slot: number): Promise<void> => {
-		let attempt = 0;
+	const getRetryDelayMs = (attemptIndex: number): number => {
+		const ceiling = Math.min(
+			options.retryMaxDelayMs,
+			options.retryBaseDelayMs * 2 ** attemptIndex,
+		);
+		if (ceiling <= options.retryBaseDelayMs) {
+			return options.retryBaseDelayMs;
+		}
 
-		while (true) {
+		return Math.floor(
+			Math.random() * (ceiling - options.retryBaseDelayMs) + options.retryBaseDelayMs,
+		);
+	};
+
+	const processOne = async (item: TItem, slot: number): Promise<void> => {
+		for (let attempt = 0; attempt <= options.maxRetries; attempt += 1) {
 			ensureNotAborted(options.abortSignal);
-			attempt += 1;
+			const attemptNumber = attempt + 1;
 			activeWorkers.set(slot, {
 				slot,
 				key: item.key,
-				attempt,
+				attempt: attemptNumber,
 				startedAt: Date.now(),
 			});
 			emit();
 
 			try {
-				const outcome = await options.runTask(item, attempt);
+				const outcome = await options.runTask(item, attemptNumber);
 				statusCounts[outcome.status] = (statusCounts[outcome.status] ?? 0) + 1;
 				completed += 1;
 				activeWorkers.delete(slot);
@@ -125,19 +138,24 @@ export async function runScheduledTasks<TItem extends ScheduledTaskItem>(options
 			} catch (error) {
 				activeWorkers.delete(slot);
 
-				if (options.isRetryableError(error) && attempt <= options.maxRetries + 1) {
-					slowdownUntil = Date.now() + Math.min(4000, 500 * 2 ** (attempt - 1));
+				if (options.isRetryableError(error) && attempt < options.maxRetries) {
+					backoffWorkers.add(slot);
 					emit();
-					await sleep(Math.min(4000, 500 * 2 ** (attempt - 1)), undefined, {
-						signal: options.abortSignal,
-					});
-					continue;
+					try {
+						await sleep(getRetryDelayMs(attempt), undefined, {
+							signal: options.abortSignal,
+						});
+						continue;
+					} finally {
+						backoffWorkers.delete(slot);
+						emit();
+					}
 				}
 
 				failed.push({
 					key: item.key,
 					reason: (error as Error).message,
-					attempts: attempt,
+					attempts: attemptNumber,
 				});
 				failedCount += 1;
 				completed += 1;
@@ -156,16 +174,6 @@ export async function runScheduledTasks<TItem extends ScheduledTaskItem>(options
 
 			const current = options.items[nextIndex];
 			nextIndex += 1;
-
-			const waitMs = Math.max(0, slowdownUntil - Date.now());
-			if (waitMs > 0) {
-				slowdownActive = true;
-				emit();
-				await sleep(waitMs, undefined, { signal: options.abortSignal });
-				slowdownActive = false;
-				emit();
-			}
-
 			await processOne(current, slot);
 		}
 	};

@@ -2,7 +2,11 @@ import { readFile } from 'node:fs/promises';
 
 import sharp from 'sharp';
 
-import type { LoraDatasetFeatureConfig } from './schema.js';
+import type {
+	LoraDatasetDatasetConfig,
+	LoraDatasetFeatureConfig,
+	LoraDatasetProviderConfig,
+} from './schema.js';
 
 export class RetryableProviderError extends Error {
 	constructor(message: string) {
@@ -30,6 +34,11 @@ export type ProviderCaptionResult = {
 	parsedPayload: unknown;
 	caption: string;
 	rawResponse: unknown;
+};
+
+export type ProviderCircuitBreakerState = {
+	primaryConsecutiveFailures: number;
+	useFallbackForRestOfBatch: boolean;
 };
 
 function createTimeoutSignal(parent: AbortSignal, timeoutMs: number): {
@@ -73,10 +82,14 @@ async function readImageAsDataUrl(options: {
 function buildRequestPayload(options: {
 	imageDataUrl: string;
 	userPrompt: string;
-	config: LoraDatasetFeatureConfig['provider'];
+	featureConfig: LoraDatasetFeatureConfig;
+	datasetConfig: LoraDatasetDatasetConfig;
 }): Record<string, unknown> {
 	return {
-		model: options.config.model,
+		model: options.featureConfig.provider.model,
+		temperature: options.datasetConfig.request.temperature,
+		top_p: options.datasetConfig.request.topP,
+		max_tokens: options.datasetConfig.request.maxOutputTokens,
 		messages: [
 			{
 				role: 'user',
@@ -230,28 +243,76 @@ function flattenValue(input: unknown): string[] {
 	return normalized.length > 0 ? [normalized] : [];
 }
 
-function assembleCaption(parsedPayload: unknown): string {
-	if (typeof parsedPayload === 'object' && parsedPayload !== null && !Array.isArray(parsedPayload)) {
-		const payload = parsedPayload as Record<string, unknown>;
+function assembleCaption(options: {
+	parsedPayload: unknown;
+	datasetConfig: LoraDatasetDatasetConfig;
+}): string {
+	const separator = options.datasetConfig.captionAssembly.separator;
+
+	if (
+		typeof options.parsedPayload === 'object' &&
+		options.parsedPayload !== null &&
+		!Array.isArray(options.parsedPayload)
+	) {
+		const payload = options.parsedPayload as Record<string, unknown>;
 		const subjectValues = flattenValue(payload.subject);
 		const otherValues = Object.entries(payload)
 			.filter(([key]) => key !== 'subject')
 			.flatMap(([, value]) => flattenValue(value));
+		const orderedValues = options.datasetConfig.captionAssembly.keepSubjectFirst
+			? [...subjectValues, ...otherValues]
+			: [...otherValues, ...subjectValues];
 
-		return [...subjectValues, ...otherValues].filter(Boolean).join('. ');
+		return orderedValues.filter(Boolean).join(separator);
 	}
 
-	return flattenValue(parsedPayload).join('. ');
+	return flattenValue(options.parsedPayload).join(separator);
+}
+
+function chooseProviderBaseUrl(options: {
+	config: LoraDatasetProviderConfig;
+	circuitBreakerState?: ProviderCircuitBreakerState;
+}): string {
+	if (options.circuitBreakerState?.useFallbackForRestOfBatch && options.config.fallbackBaseUrl) {
+		return options.config.fallbackBaseUrl;
+	}
+
+	return options.config.baseUrl;
+}
+
+function markPrimaryFailure(options: {
+	featureConfig: LoraDatasetFeatureConfig;
+	circuitBreakerState?: ProviderCircuitBreakerState;
+}): void {
+	if (!options.circuitBreakerState || !options.featureConfig.provider.fallbackBaseUrl) {
+		return;
+	}
+
+	options.circuitBreakerState.primaryConsecutiveFailures += 1;
+	if (
+		options.circuitBreakerState.primaryConsecutiveFailures >=
+		options.featureConfig.scheduler.circuitBreakerFailureThreshold
+	) {
+		options.circuitBreakerState.useFallbackForRestOfBatch = true;
+	}
+}
+
+function markPrimarySuccess(circuitBreakerState?: ProviderCircuitBreakerState): void {
+	if (!circuitBreakerState) {
+		return;
+	}
+
+	circuitBreakerState.primaryConsecutiveFailures = 0;
 }
 
 /**
 """Load the user prompt file and return the full prompt text.
 
-INTENT: 读取用户维护的 prompt 文件，作为 preview 和 batch 的单一提示词来源
+INTENT: Read the user-maintained prompt file once for preview and batch execution
 INPUT: promptPath
 OUTPUT: string
-SIDE EFFECT: 读取文件系统
-FAILURE: prompt 文件不存在、无法读取或内容为空时抛出 Error
+SIDE EFFECT: Read the filesystem
+FAILURE: Throw Error when the prompt file is missing, unreadable, or empty
 """
  */
 export async function loadUserPrompt(promptPath: string): Promise<string> {
@@ -272,7 +333,7 @@ export async function readUserPromptPreview(
 }
 
 export function readApiKey(
-	config: LoraDatasetFeatureConfig['provider'],
+	config: LoraDatasetProviderConfig,
 	envSnapshot: Readonly<Record<string, string | undefined>>,
 ): string {
 	const apiKey = envSnapshot[config.apiKeyEnv]?.trim() ?? '';
@@ -290,46 +351,93 @@ export function isRetryableProviderError(error: unknown): boolean {
 }
 
 /**
-"""Call the OpenAI-compatible vision provider and assemble the final caption text.
+"""Create one batch-local circuit breaker state for primary/fallback routing.
 
-INTENT: 统一 preview/full batch 的 provider 请求、响应解析和 caption 组装逻辑
-INPUT: imagePath, userPrompt, provider config, apiKey, abortSignal
+INTENT: Keep fallback routing deterministic within one batch without introducing global mutable state
+INPUT: none
+OUTPUT: ProviderCircuitBreakerState
+SIDE EFFECT: None
+FAILURE: None
+"""
+ */
+export function createProviderCircuitBreakerState(): ProviderCircuitBreakerState {
+	return {
+		primaryConsecutiveFailures: 0,
+		useFallbackForRestOfBatch: false,
+	};
+}
+
+/**
+"""Call the configured vision provider and assemble the final caption text.
+
+INTENT: Unify request building, provider routing, response parsing, and caption assembly across preview and batch
+INPUT: imagePath, userPrompt, featureConfig, datasetConfig, apiKey, abortSignal, optional circuitBreakerState
 OUTPUT: ProviderCaptionResult
-SIDE EFFECT: 发起网络请求并对图片做分析尺寸压缩
-FAILURE: 可重试错误抛出 RetryableProviderError，致命请求错误抛出 ProviderFatalError，响应解析错误抛出 ProviderParseError
+SIDE EFFECT: Issue one network request and resize one image for upload
+FAILURE: Throw RetryableProviderError, ProviderFatalError, or ProviderParseError when the request/parse fails
 """
  */
 export async function requestCaptionForImage(options: {
 	imagePath: string;
 	userPrompt: string;
-	config: LoraDatasetFeatureConfig['provider'];
+	featureConfig: LoraDatasetFeatureConfig;
+	datasetConfig: LoraDatasetDatasetConfig;
 	apiKey: string;
 	abortSignal: AbortSignal;
+	circuitBreakerState?: ProviderCircuitBreakerState;
 }): Promise<ProviderCaptionResult> {
 	const imageDataUrl = await readImageAsDataUrl({
 		imagePath: options.imagePath,
-		longEdge: options.config.analysisLongEdge,
-		jpegQuality: options.config.analysisJpegQuality,
+		longEdge: options.featureConfig.analysis.longEdge,
+		jpegQuality: options.featureConfig.analysis.jpegQuality,
+	});
+	const baseUrl = chooseProviderBaseUrl({
+		config: options.featureConfig.provider,
+		circuitBreakerState: options.circuitBreakerState,
 	});
 	const payload = buildRequestPayload({
 		imageDataUrl,
 		userPrompt: options.userPrompt,
-		config: options.config,
+		featureConfig: options.featureConfig,
+		datasetConfig: options.datasetConfig,
 	});
-	const rawResponse = await postChatCompletion({
-		baseUrl: options.config.baseUrl,
-		apiKey: options.apiKey,
-		payload,
-		timeoutSeconds: options.config.timeoutSeconds,
-		abortSignal: options.abortSignal,
-	});
+
+	let rawResponse: unknown;
+
+	try {
+		rawResponse = await postChatCompletion({
+			baseUrl,
+			apiKey: options.apiKey,
+			payload,
+			timeoutSeconds: options.featureConfig.scheduler.timeoutSeconds,
+			abortSignal: options.abortSignal,
+		});
+		if (baseUrl === options.featureConfig.provider.baseUrl) {
+			markPrimarySuccess(options.circuitBreakerState);
+		}
+	} catch (error) {
+		if (
+			baseUrl === options.featureConfig.provider.baseUrl &&
+			isRetryableProviderError(error)
+		) {
+			markPrimaryFailure({
+				featureConfig: options.featureConfig,
+				circuitBreakerState: options.circuitBreakerState,
+			});
+		}
+		throw error;
+	}
+
 	const responseText = extractResponseText(rawResponse);
 	const parsedPayload = JSON.parse(extractJsonText(responseText)) as unknown;
 
 	return {
 		responseText,
 		parsedPayload,
-		caption: assembleCaption(parsedPayload),
+		caption: assembleCaption({
+			parsedPayload,
+			datasetConfig: options.datasetConfig,
+		}),
 		rawResponse,
 	};
 }

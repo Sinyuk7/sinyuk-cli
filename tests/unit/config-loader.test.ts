@@ -117,14 +117,20 @@ logging:
 		writeFileSync(
 			join(sinyukHomePath, 'features', 'lora-dataset', 'config.yaml'),
 			`provider:
-  baseUrl: https://api.openai.com/v1
-  model: gpt-4.1-mini
-  apiKeyEnv: OPENAI_API_KEY
-  concurrency: 4
+  baseUrl: https://hk.n1n.ai/v1
+  fallbackBaseUrl: https://api.n1n.ai/v1
+  model: qwen3.5-122b-a10b
+  apiKeyEnv: N1N_API_KEY
+scheduler:
+  concurrency: 8
   timeoutSeconds: 60
   maxRetries: 2
-  analysisLongEdge: 1536
-  analysisJpegQuality: 90
+  retryBaseDelayMs: 300
+  retryMaxDelayMs: 2500
+  circuitBreakerFailureThreshold: 3
+analysis:
+  longEdge: 1024
+  jpegQuality: 85
 cropProfiles:
   - ratio: 1:1
     longEdge: 1024
@@ -151,14 +157,22 @@ cropProfiles:
 		expect(loaded.config.features?.['hello-world']).toEqual({ includeHidden: true });
 		expect(loaded.config.features?.['lora-dataset']).toEqual({
 			provider: {
-				baseUrl: 'https://api.openai.com/v1',
-				model: 'gpt-4.1-mini',
-				apiKeyEnv: 'OPENAI_API_KEY',
-				concurrency: 4,
+				baseUrl: 'https://hk.n1n.ai/v1',
+				fallbackBaseUrl: 'https://api.n1n.ai/v1',
+				model: 'qwen3.5-122b-a10b',
+				apiKeyEnv: 'N1N_API_KEY',
+			},
+			scheduler: {
+				concurrency: 8,
 				timeoutSeconds: 60,
 				maxRetries: 2,
-				analysisLongEdge: 1536,
-				analysisJpegQuality: 90,
+				retryBaseDelayMs: 300,
+				retryMaxDelayMs: 2500,
+				circuitBreakerFailureThreshold: 3,
+			},
+			analysis: {
+				longEdge: 1024,
+				jpegQuality: 85,
 			},
 			cropProfiles: [{ ratio: '1:1', longEdge: 1024 }],
 		});

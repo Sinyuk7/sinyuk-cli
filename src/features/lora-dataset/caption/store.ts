@@ -5,7 +5,10 @@ import type { EntryMode, ExecutionContext } from '../../../platform/execution-co
 import type { LoraScanResult } from '../shared/artifacts.js';
 import { LoraDatasetBootstrapPauseError } from '../shared/bootstrap.js';
 import { loadScanContext, runBatch, runPreview } from '../shared/pipeline.js';
-import { getLoraDatasetFeatureConfig } from '../shared/schema.js';
+import {
+	getLoraDatasetFeatureConfig,
+	type LoraDatasetDatasetConfig,
+} from '../shared/schema.js';
 import type { BatchRunResult, PreviewResult } from '../shared/types.js';
 import type { SchedulerProgress } from '../shared/scheduler.js';
 import type { LoraDatasetWorkspace } from '../shared/workspace.js';
@@ -25,6 +28,7 @@ export type CaptionState = {
 	step: CaptionStep;
 	pathInput: string;
 	promptPreviewLines: string[];
+	datasetConfig: LoraDatasetDatasetConfig | null;
 	workspace: LoraDatasetWorkspace | null;
 	scanResult: LoraScanResult | null;
 	previewResult: PreviewResult | null;
@@ -83,6 +87,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 		step: 'input',
 		pathInput: options.initialPath ?? process.cwd(),
 		promptPreviewLines: [],
+		datasetConfig: null,
 		workspace: null,
 		scanResult: null,
 		previewResult: null,
@@ -111,6 +116,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 					const loaded = await loadScanContext({ pathInput });
 					set({
 						step: 'previewing',
+						datasetConfig: loaded.datasetConfig,
 						workspace: loaded.workspace,
 						scanResult: loaded.scanResult,
 						promptPreviewLines: loaded.promptPreviewLines,
@@ -119,6 +125,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 					if (error instanceof LoraDatasetBootstrapPauseError) {
 						set({
 							step: 'bootstrap-paused',
+							datasetConfig: null,
 							workspace: null,
 							scanResult: null,
 							previewResult: null,
@@ -135,13 +142,14 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 			},
 
 			async runPreview() {
-				const { scanResult, workspace } = get();
-				if (!scanResult || !workspace) return;
+				const { scanResult, datasetConfig, workspace } = get();
+				if (!scanResult || !datasetConfig || !workspace) return;
 				set({ step: 'previewing', errorMessage: null });
 				try {
 					const previewResult = await runPreview({
 						scanResult,
 						config,
+						datasetConfig,
 						workspace,
 						executionContext: options.createExecutionContext({
 							entryMode: options.entryMode,
@@ -160,13 +168,14 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 			},
 
 			async runBatch() {
-				const { scanResult, workspace } = get();
-				if (!scanResult || !workspace) return;
+				const { scanResult, datasetConfig, workspace } = get();
+				if (!scanResult || !datasetConfig || !workspace) return;
 				set({ step: 'running', progress: null, errorMessage: null });
 				try {
 					const batchResult = await runBatch({
 						scanResult,
 						config,
+						datasetConfig,
 						workspace,
 						executionContext: options.createExecutionContext({
 							entryMode: options.entryMode,

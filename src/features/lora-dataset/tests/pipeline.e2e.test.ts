@@ -17,6 +17,7 @@ import { discoverLoraImages } from '../shared/artifacts.js';
 import { runBatch, runCrop } from '../shared/pipeline.js';
 import { resolveLoraDatasetWorkspace } from '../shared/workspace.js';
 import {
+	DATASET_CONFIG,
 	FEATURE_CONFIG,
 	HAS_API_KEY,
 	TEST_1_DIR,
@@ -40,6 +41,7 @@ describe('pipeline: caption → crop integration', { timeout: 300_000 }, () => {
 		const batchResult = await runBatch({
 			scanResult,
 			config: FEATURE_CONFIG,
+			datasetConfig: DATASET_CONFIG,
 			workspace,
 			executionContext: ctx,
 			concurrencyOverride: 1,

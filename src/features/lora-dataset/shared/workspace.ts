@@ -8,6 +8,7 @@ export type LoraDatasetWorkspace = {
 	datasetPath: string;
 	workDirPath: string;
 	promptTemplatePath: string;
+	configPath: string;
 	promptPath: string;
 	runSummaryPath: string;
 	failedItemsPath: string;
@@ -51,6 +52,7 @@ export function resolveLoraDatasetWorkspace(datasetPath: string): LoraDatasetWor
 		datasetPath: resolvedDatasetPath,
 		workDirPath,
 		promptTemplatePath: join(featureHomePath, 'prompts', 'user-prompt.txt.example'),
+		configPath: join(workDirPath, 'config.yaml'),
 		promptPath: join(workDirPath, 'user-prompt.txt'),
 		runSummaryPath: join(workDirPath, 'run-summary.json'),
 		failedItemsPath: join(workDirPath, 'failed-items.txt'),

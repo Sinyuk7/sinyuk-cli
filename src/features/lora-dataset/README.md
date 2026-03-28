@@ -31,9 +31,11 @@ Feature domain for dataset captioning and crop preparation.
 ## Config And Workspace Rules
 
 - User-level defaults live in `~/.sinyuk-cli/features/lora-dataset/`
+- User-level feature config path: `~/.sinyuk-cli/features/lora-dataset/config.yaml`
 - Prompt template path: `~/.sinyuk-cli/features/lora-dataset/prompts/user-prompt.txt.example`
 - Dataset-local mutable state lives in `<dataset>/_lora_dataset/`
 - Dataset-local files:
+  - `config.yaml`
   - `user-prompt.txt`
   - `run-summary.json`
   - `failed-items.txt`
@@ -47,6 +49,9 @@ Feature domain for dataset captioning and crop preparation.
 
 ## Bootstrap Contract
 
+- First run with no dataset-local config:
+  - copy template to `<dataset>/_lora_dataset/config.yaml`
+  - continue with that exact file as the only dataset-local request config
 - First run with no local prompt:
   - copy template to `<dataset>/_lora_dataset/user-prompt.txt`
   - pause immediately
@@ -56,6 +61,10 @@ Feature domain for dataset captioning and crop preparation.
   - return exit code `1`
 - Only edited local prompt is allowed to continue into preview / batch / crop
 - CLI and interactive flows share the same bootstrap logic
+- Dataset-local config is strict:
+  - unknown fields fail immediately
+  - missing required fields fail immediately
+  - no fallback injection from global config into dataset config
 
 ## Current Status
 
@@ -66,7 +75,8 @@ Feature domain for dataset captioning and crop preparation.
   - fail-fast bootstrap for local prompt initialization
   - comprehensive feature-local test suite (scan, workspace, crop, caption, pipeline integration) — see [Tests](#tests) below
 - Stable assumptions:
-  - provider config and crop profiles remain user-level config
+  - provider, scheduler, analysis, and crop profiles remain user-level config
+  - request tuning and caption assembly are dataset-local config
   - prompt is dataset-local, not YAML-configured
 - Known gaps:
   - old `_meta/lora-dataset/` is only ignored for scanning; no auto-migration exists

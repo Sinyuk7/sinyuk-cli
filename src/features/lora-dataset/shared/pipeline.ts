@@ -17,6 +17,7 @@ import {
 } from './artifacts.js';
 import { ensureLoraDatasetPromptReady } from './bootstrap.js';
 import {
+	createProviderCircuitBreakerState,
 	isRetryableProviderError,
 	loadUserPrompt,
 	readApiKey,
@@ -24,7 +25,12 @@ import {
 	requestCaptionForImage,
 } from './provider.js';
 import { runScheduledTasks, type FailedTask, type SchedulerProgress } from './scheduler.js';
-import type { LoraDatasetCropProfile, LoraDatasetFeatureConfig } from './schema.js';
+import type {
+	LoraDatasetCropProfile,
+	LoraDatasetDatasetConfig,
+	LoraDatasetFeatureConfig,
+} from './schema.js';
+import { loadLoraDatasetDatasetConfig } from './schema.js';
 import type { BatchRunResult, CropRunResult, PreviewResult } from './types.js';
 import type { LoraDatasetWorkspace } from './workspace.js';
 
@@ -73,12 +79,14 @@ export async function loadScanContext(options: {
 }): Promise<{
 	workspace: LoraDatasetWorkspace;
 	scanResult: LoraScanResult;
+	datasetConfig: LoraDatasetDatasetConfig;
 	promptPreviewLines: string[];
 }> {
 	const workspace = await ensureLoraDatasetPromptReady(options.pathInput);
+	const datasetConfig = loadLoraDatasetDatasetConfig(workspace.configPath);
 	const scanResult = await discoverLoraImages(options.pathInput);
 	const promptPreviewLines = await readUserPromptPreview(workspace.promptPath);
-	return { workspace, scanResult, promptPreviewLines };
+	return { workspace, scanResult, datasetConfig, promptPreviewLines };
 }
 
 /**
@@ -94,6 +102,7 @@ FAILURE: Throw Error when no preview image exists, prompt/api key is invalid, or
 export async function runPreview(options: {
 	scanResult: LoraScanResult;
 	config: LoraDatasetFeatureConfig;
+	datasetConfig: LoraDatasetDatasetConfig;
 	workspace: LoraDatasetWorkspace;
 	executionContext: ExecutionContext;
 	previewFile: string | null;
@@ -104,7 +113,8 @@ export async function runPreview(options: {
 	const result = await requestCaptionForImage({
 		imagePath: image.absolutePath,
 		userPrompt: prompt,
-		config: options.config.provider,
+		featureConfig: options.config,
+		datasetConfig: options.datasetConfig,
 		apiKey,
 		abortSignal: options.executionContext.abortSignal,
 	});
@@ -124,8 +134,10 @@ async function captionOneImage(options: {
 	item: LoraScanResult['images'][number] & { key: string };
 	prompt: string;
 	config: LoraDatasetFeatureConfig;
+	datasetConfig: LoraDatasetDatasetConfig;
 	executionContext: ExecutionContext;
 	apiKey: string;
+	circuitBreakerState: ReturnType<typeof createProviderCircuitBreakerState>;
 }): Promise<{ status: 'skipped' | 'captioned' }> {
 	if (await isValidTextArtifact(options.item.captionPath)) {
 		return { status: 'skipped' };
@@ -134,9 +146,11 @@ async function captionOneImage(options: {
 	const result = await requestCaptionForImage({
 		imagePath: options.item.absolutePath,
 		userPrompt: options.prompt,
-		config: options.config.provider,
+		featureConfig: options.config,
+		datasetConfig: options.datasetConfig,
 		apiKey: options.apiKey,
 		abortSignal: options.executionContext.abortSignal,
+		circuitBreakerState: options.circuitBreakerState,
 	});
 	await writeCaptionArtifacts({
 		image: options.item,
@@ -159,6 +173,7 @@ FAILURE: Throw Error when prompt/api key is invalid, scheduling fails, provider 
 export async function runBatch(options: {
 	scanResult: LoraScanResult;
 	config: LoraDatasetFeatureConfig;
+	datasetConfig: LoraDatasetDatasetConfig;
 	workspace: LoraDatasetWorkspace;
 	executionContext: ExecutionContext;
 	concurrencyOverride: number | null;
@@ -166,10 +181,13 @@ export async function runBatch(options: {
 }): Promise<BatchRunResult> {
 	const prompt = await loadUserPrompt(options.workspace.promptPath);
 	const apiKey = readApiKey(options.config.provider, options.executionContext.envSnapshot);
+	const circuitBreakerState = createProviderCircuitBreakerState();
 	const queueResult = await runScheduledTasks({
 		items: options.scanResult.images.map((item) => ({ ...item, key: item.relativePath })),
-		concurrency: options.concurrencyOverride ?? options.config.provider.concurrency,
-		maxRetries: options.config.provider.maxRetries,
+		concurrency: options.concurrencyOverride ?? options.config.scheduler.concurrency,
+		maxRetries: options.config.scheduler.maxRetries,
+		retryBaseDelayMs: options.config.scheduler.retryBaseDelayMs,
+		retryMaxDelayMs: options.config.scheduler.retryMaxDelayMs,
 		abortSignal: options.executionContext.abortSignal,
 		isRetryableError: isRetryableProviderError,
 		onProgress: options.onProgress,
@@ -178,8 +196,10 @@ export async function runBatch(options: {
 				item,
 				prompt,
 				config: options.config,
+				datasetConfig: options.datasetConfig,
 				executionContext: options.executionContext,
 				apiKey,
+				circuitBreakerState,
 			}),
 	});
 

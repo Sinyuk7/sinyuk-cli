@@ -12,9 +12,13 @@ import { writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { loadUserPrompt, readApiKey } from '../shared/provider.js';
-import { getLoraDatasetFeatureConfig } from '../shared/schema.js';
+import {
+	getLoraDatasetFeatureConfig,
+	loadLoraDatasetDatasetConfig,
+} from '../shared/schema.js';
 import { resolveLoraDatasetWorkspace } from '../shared/workspace.js';
 import {
+	DATASET_CONFIG,
 	PLATFORM_CONFIG,
 	PROVIDER_CONFIG,
 	createTempDir,
@@ -34,6 +38,7 @@ describe('workspace resolution', () => {
 		const workspace = resolveLoraDatasetWorkspace('/test/dataset');
 		expect(workspace.datasetPath).toBe(resolve('/test/dataset'));
 		expect(workspace.workDirPath).toMatch(/_lora_dataset$/);
+		expect(workspace.configPath).toContain('config.yaml');
 		expect(workspace.promptPath).toContain('user-prompt.txt');
 		expect(workspace.runSummaryPath).toContain('run-summary.json');
 		expect(workspace.failedItemsPath).toContain('failed-items.txt');
@@ -50,6 +55,7 @@ describe('getLoraDatasetFeatureConfig', () => {
 		const config = getLoraDatasetFeatureConfig(PLATFORM_CONFIG);
 		expect(config.provider.baseUrl).toBe('https://hk.n1n.ai/v1');
 		expect(config.provider.model).toBe('qwen3.5-122b-a10b');
+		expect(config.scheduler.concurrency).toBe(2);
 		expect(config.cropProfiles).toHaveLength(2);
 	});
 
@@ -65,6 +71,37 @@ describe('getLoraDatasetFeatureConfig', () => {
 				},
 			}),
 		).toThrow('Invalid feature config');
+	});
+});
+
+describe('loadLoraDatasetDatasetConfig', () => {
+	test('loads strict dataset config without fallback injection', () => {
+		const configPath = join(createTempDir('dataset-config-'), 'config.yaml');
+		writeFileSync(
+			configPath,
+			`request:
+  temperature: ${DATASET_CONFIG.request.temperature}
+  topP: ${DATASET_CONFIG.request.topP}
+  maxOutputTokens: ${DATASET_CONFIG.request.maxOutputTokens}
+captionAssembly:
+  separator: "${DATASET_CONFIG.captionAssembly.separator}"
+  keepSubjectFirst: ${DATASET_CONFIG.captionAssembly.keepSubjectFirst}
+`,
+			'utf8',
+		);
+
+		expect(loadLoraDatasetDatasetConfig(configPath)).toEqual(DATASET_CONFIG);
+	});
+
+	test('throws on unknown dataset config fields', () => {
+		const configPath = join(createTempDir('dataset-config-'), 'config.yaml');
+		writeFileSync(
+			configPath,
+			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\n  temp: 123\ncaptionAssembly:\n  separator: ". "\n  keepSubjectFirst: true\n',
+			'utf8',
+		);
+
+		expect(() => loadLoraDatasetDatasetConfig(configPath)).toThrow('Invalid dataset config');
 	});
 });
 

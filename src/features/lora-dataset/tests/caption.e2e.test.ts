@@ -19,9 +19,9 @@ import { requestCaptionForImage } from '../shared/provider.js';
 import { resolveLoraDatasetWorkspace } from '../shared/workspace.js';
 import {
 	API_KEY,
+	DATASET_CONFIG,
 	FEATURE_CONFIG,
 	HAS_API_KEY,
-	PROVIDER_CONFIG,
 	TEST_1_DIR,
 	TEST_2_DIR,
 	TEST_PROMPT,
@@ -40,7 +40,8 @@ describe('caption: requestCaptionForImage', { timeout: 120_000 }, () => {
 		const result = await requestCaptionForImage({
 			imagePath,
 			userPrompt: TEST_PROMPT,
-			config: PROVIDER_CONFIG,
+			featureConfig: FEATURE_CONFIG,
+			datasetConfig: DATASET_CONFIG,
 			apiKey: API_KEY,
 			abortSignal: AbortSignal.timeout(120_000),
 		});
@@ -68,6 +69,7 @@ describe('caption: loadScanContext', () => {
 
 		expect(context.workspace.datasetPath).toBe(resolve(datasetPath));
 		expect(context.scanResult.images).toHaveLength(5);
+		expect(context.datasetConfig).toEqual(DATASET_CONFIG);
 		expect(context.promptPreviewLines.length).toBeGreaterThan(0);
 		expect(context.promptPreviewLines[0]).toContain('Return strict JSON');
 	});
@@ -91,6 +93,7 @@ describe('caption: runPreview', { timeout: 120_000 }, () => {
 		const preview = await runPreview({
 			scanResult,
 			config: FEATURE_CONFIG,
+			datasetConfig: DATASET_CONFIG,
 			workspace,
 			executionContext: ctx,
 			previewFile: scanResult.images[0]!.relativePath,
@@ -121,6 +124,7 @@ describe('caption: runBatch — single image', { timeout: 300_000 }, () => {
 		const result = await runBatch({
 			scanResult,
 			config: FEATURE_CONFIG,
+			datasetConfig: DATASET_CONFIG,
 			workspace,
 			executionContext: ctx,
 			concurrencyOverride: 1,
@@ -156,9 +160,23 @@ describe('caption: runBatch — single image', { timeout: 300_000 }, () => {
 		const scanResult = await discoverLoraImages(datasetPath);
 		const ctx = createTestExecutionContext();
 
-		await runBatch({ scanResult, config: FEATURE_CONFIG, workspace, executionContext: ctx, concurrencyOverride: 1 });
+		await runBatch({
+			scanResult,
+			config: FEATURE_CONFIG,
+			datasetConfig: DATASET_CONFIG,
+			workspace,
+			executionContext: ctx,
+			concurrencyOverride: 1,
+		});
 
-		const result2 = await runBatch({ scanResult, config: FEATURE_CONFIG, workspace, executionContext: ctx, concurrencyOverride: 1 });
+		const result2 = await runBatch({
+			scanResult,
+			config: FEATURE_CONFIG,
+			datasetConfig: DATASET_CONFIG,
+			workspace,
+			executionContext: ctx,
+			concurrencyOverride: 1,
+		});
 		expect(result2.total).toBe(1);
 		expect(result2.statusCounts['skipped']).toBe(1);
 		expect(result2.statusCounts['captioned']).toBeUndefined();
@@ -183,6 +201,7 @@ describe('caption: runBatch — multi image concurrency', { timeout: 300_000 }, 
 		const result = await runBatch({
 			scanResult,
 			config: FEATURE_CONFIG,
+			datasetConfig: DATASET_CONFIG,
 			workspace,
 			executionContext: ctx,
 			concurrencyOverride: 2,

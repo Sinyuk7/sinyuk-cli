@@ -1,5 +1,6 @@
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
 
+import { copyLoraDatasetTemplateIfMissing } from './templates.js';
 import type { LoraDatasetWorkspace } from './workspace.js';
 import { resolveLoraDatasetWorkspace } from './workspace.js';
 
@@ -52,6 +53,7 @@ export async function ensureLoraDatasetPromptReady(
 ): Promise<LoraDatasetWorkspace> {
 	const workspace = resolveLoraDatasetWorkspace(datasetPath);
 	await mkdir(workspace.workDirPath, { recursive: true });
+	const copiedDatasetConfig = copyLoraDatasetTemplateIfMissing('datasetConfig', workspace.configPath);
 
 	const templateText = await readFile(workspace.promptTemplatePath, 'utf8');
 	let promptText = '';
@@ -65,21 +67,29 @@ export async function ensureLoraDatasetPromptReady(
 		}
 
 		await copyFile(workspace.promptTemplatePath, workspace.promptPath);
-		throw new LoraDatasetBootstrapPauseError(
-			createBootstrapPauseLines({
+		const messageLines = copiedDatasetConfig
+			? [`[Action] Copied dataset config to ${workspace.configPath}`]
+			: [];
+		throw new LoraDatasetBootstrapPauseError([
+			...messageLines,
+			...createBootstrapPauseLines({
 				promptPath: workspace.promptPath,
 				copiedTemplate: true,
 			}),
-		);
+		]);
 	}
 
 	if (normalizePromptText(promptText) === normalizePromptText(templateText)) {
-		throw new LoraDatasetBootstrapPauseError(
-			createBootstrapPauseLines({
+		const messageLines = copiedDatasetConfig
+			? [`[Action] Copied dataset config to ${workspace.configPath}`]
+			: [];
+		throw new LoraDatasetBootstrapPauseError([
+			...messageLines,
+			...createBootstrapPauseLines({
 				promptPath: workspace.promptPath,
 				copiedTemplate: false,
 			}),
-		);
+		]);
 	}
 
 	return workspace;

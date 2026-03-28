@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { Command } from 'clipanion';
 
 import type { SinyukCliContext } from '../cli/context.js';
+import { copyLoraDatasetTemplateIfMissing } from '../features/lora-dataset/shared/templates.js';
 import { getFeatureConfigPath, getFeatureHomePath, getGlobalConfigPath } from '../platform/home.js';
 
 function buildInitialGlobalConfig(): string {
@@ -14,31 +15,6 @@ function buildInitialGlobalConfig(): string {
 
 function buildInitialHelloWorldConfig(): string {
 	return `includeHidden: false
-`;
-}
-
-function buildInitialLoraDatasetConfig(): string {
-	return `provider:
-  baseUrl: https://api.openai.com/v1
-  model: gpt-4.1-mini
-  apiKeyEnv: OPENAI_API_KEY
-  concurrency: 4
-  timeoutSeconds: 60
-  maxRetries: 2
-  analysisLongEdge: 1536
-  analysisJpegQuality: 90
-cropProfiles:
-  - ratio: 1:1
-    longEdge: 1024
-  - ratio: 3:4
-    longEdge: 1536
-`;
-}
-
-function buildInitialLoraPrompt(): string {
-	return `Return strict JSON only.
-
-Describe the main subject first, then short visual details useful for LoRA training.
 `;
 }
 
@@ -76,10 +52,10 @@ export class InitCommand extends Command<SinyukCliContext> {
 			writeFileIfMissing(helloWorldConfigPath, buildInitialHelloWorldConfig())
 				? helloWorldConfigPath
 				: null,
-			writeFileIfMissing(loraDatasetConfigPath, buildInitialLoraDatasetConfig())
+			copyLoraDatasetTemplateIfMissing('featureConfig', loraDatasetConfigPath)
 				? loraDatasetConfigPath
 				: null,
-			writeFileIfMissing(loraPromptPath, buildInitialLoraPrompt()) ? loraPromptPath : null,
+			copyLoraDatasetTemplateIfMissing('userPrompt', loraPromptPath) ? loraPromptPath : null,
 		].filter((path): path is string => path !== null);
 
 		if (createdPaths.length === 0) {

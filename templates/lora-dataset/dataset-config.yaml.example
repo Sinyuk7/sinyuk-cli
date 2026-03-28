@@ -1,0 +1,8 @@
+request:
+  temperature: 0.2
+  topP: 0.9
+  maxOutputTokens: 256
+
+captionAssembly:
+  separator: ". "
+  keepSubjectFirst: true

@@ -12,7 +12,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import type { LoraDatasetFeatureConfig } from '../shared/schema.js';
+import type {
+	LoraDatasetDatasetConfig,
+	LoraDatasetFeatureConfig,
+} from '../shared/schema.js';
 import { resolveLoraDatasetWorkspace } from '../shared/workspace.js';
 import type { PlatformConfig } from '../../../platform/config/schema.js';
 import type { ExecutionContext } from '../../../platform/execution-context.js';
@@ -27,7 +30,7 @@ export const TEST_1_DIR = join(LOCAL_DATA_DIR, 'test-1-image-1');
 export const TEST_2_DIR = join(LOCAL_DATA_DIR, 'test-2-image-5');
 
 // ---------------------------------------------------------------------------
-// API key — always from env, never hardcoded
+// API key - always from env, never hardcoded
 // ---------------------------------------------------------------------------
 
 export const API_KEY = process.env.TEST_LORA_API_KEY ?? '';
@@ -39,21 +42,41 @@ export const HAS_API_KEY = API_KEY.length > 0;
 
 export const PROVIDER_CONFIG: LoraDatasetFeatureConfig['provider'] = {
 	baseUrl: 'https://hk.n1n.ai/v1',
+	fallbackBaseUrl: 'https://api.n1n.ai/v1',
 	model: 'qwen3.5-122b-a10b',
 	apiKeyEnv: 'TEST_LORA_API_KEY',
-	concurrency: 2,
-	timeoutSeconds: 120,
-	maxRetries: 1,
-	analysisLongEdge: 1024,
-	analysisJpegQuality: 85,
 };
 
 export const FEATURE_CONFIG: LoraDatasetFeatureConfig = {
 	provider: PROVIDER_CONFIG,
+	scheduler: {
+		concurrency: 2,
+		timeoutSeconds: 120,
+		maxRetries: 1,
+		retryBaseDelayMs: 50,
+		retryMaxDelayMs: 100,
+		circuitBreakerFailureThreshold: 3,
+	},
+	analysis: {
+		longEdge: 1024,
+		jpegQuality: 85,
+	},
 	cropProfiles: [
 		{ ratio: '1:1', longEdge: 512 },
 		{ ratio: '3:4', longEdge: 768 },
 	],
+};
+
+export const DATASET_CONFIG: LoraDatasetDatasetConfig = {
+	request: {
+		temperature: 0.2,
+		topP: 0.9,
+		maxOutputTokens: 256,
+	},
+	captionAssembly: {
+		separator: '. ',
+		keepSubjectFirst: true,
+	},
 };
 
 export const PLATFORM_CONFIG: PlatformConfig = {
@@ -106,6 +129,17 @@ export function createTestExecutionContext(overrides?: Partial<ExecutionContext>
 	};
 }
 
+function createDatasetConfigYaml(): string {
+	return `request:
+  temperature: ${DATASET_CONFIG.request.temperature}
+  topP: ${DATASET_CONFIG.request.topP}
+  maxOutputTokens: ${DATASET_CONFIG.request.maxOutputTokens}
+captionAssembly:
+  separator: "${DATASET_CONFIG.captionAssembly.separator}"
+  keepSubjectFirst: ${DATASET_CONFIG.captionAssembly.keepSubjectFirst}
+`;
+}
+
 /**
  * Copy a source test-data directory into a fresh temp dir and prepare workspace with prompt.
  *
@@ -125,13 +159,14 @@ export function setupDatasetWorkspace(
 
 	const workspace = resolveLoraDatasetWorkspace(datasetPath);
 	mkdirSync(workspace.workDirPath, { recursive: true });
+	writeFileSync(workspace.configPath, createDatasetConfigYaml(), 'utf8');
 	writeFileSync(workspace.promptPath, TEST_PROMPT, 'utf8');
 
 	return { datasetPath, homePath };
 }
 
 // ---------------------------------------------------------------------------
-// SINYUK_HOME env guard — use in beforeEach/afterEach
+// SINYUK_HOME env guard - use in beforeEach/afterEach
 // ---------------------------------------------------------------------------
 
 const originalSinyukHome = process.env.SINYUK_HOME;
