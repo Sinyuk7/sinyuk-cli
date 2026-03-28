@@ -1,0 +1,112 @@
+/**
+ * Tests for workspace resolution, config validation, and prompt loading.
+ *
+ * INTENT: Verify path conventions, config schema enforcement, and prompt file I/O
+ * INPUT: In-memory config objects, temp filesystem
+ * OUTPUT: Validated workspace paths, config parsing, prompt text
+ * SIDE EFFECT: Temp filesystem writes
+ * FAILURE: Fail fast on schema violations or missing files
+ */
+
+import { writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+import { loadUserPrompt, readApiKey } from '../shared/provider.js';
+import { getLoraDatasetFeatureConfig } from '../shared/schema.js';
+import { resolveLoraDatasetWorkspace } from '../shared/workspace.js';
+import {
+	PLATFORM_CONFIG,
+	PROVIDER_CONFIG,
+	createTempDir,
+	withTempSinyukHome,
+} from './_test-helpers.js';
+
+// ---------------------------------------------------------------------------
+// Workspace path resolution
+// ---------------------------------------------------------------------------
+
+describe('workspace resolution', () => {
+	const env = withTempSinyukHome();
+	beforeEach(() => env.getHomePath());
+	afterEach(() => env.restore());
+
+	test('resolves all standard workspace paths', () => {
+		const workspace = resolveLoraDatasetWorkspace('/test/dataset');
+		expect(workspace.datasetPath).toBe(resolve('/test/dataset'));
+		expect(workspace.workDirPath).toMatch(/_lora_dataset$/);
+		expect(workspace.promptPath).toContain('user-prompt.txt');
+		expect(workspace.runSummaryPath).toContain('run-summary.json');
+		expect(workspace.failedItemsPath).toContain('failed-items.txt');
+		expect(workspace.rawDirPath).toContain('raw');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Config validation (getLoraDatasetFeatureConfig)
+// ---------------------------------------------------------------------------
+
+describe('getLoraDatasetFeatureConfig', () => {
+	test('validates correct config snapshot', () => {
+		const config = getLoraDatasetFeatureConfig(PLATFORM_CONFIG);
+		expect(config.provider.baseUrl).toBe('https://hk.n1n.ai/v1');
+		expect(config.provider.model).toBe('qwen3.5-122b-a10b');
+		expect(config.cropProfiles).toHaveLength(2);
+	});
+
+	test('throws on missing feature section', () => {
+		expect(() => getLoraDatasetFeatureConfig({})).toThrow('Invalid feature config');
+	});
+
+	test('throws on invalid provider fields', () => {
+		expect(() =>
+			getLoraDatasetFeatureConfig({
+				features: {
+					'lora-dataset': { provider: { baseUrl: 'not-a-url' }, cropProfiles: [] },
+				},
+			}),
+		).toThrow('Invalid feature config');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readApiKey contract
+// ---------------------------------------------------------------------------
+
+describe('readApiKey', () => {
+	test('reads API key from env snapshot', () => {
+		const key = readApiKey(PROVIDER_CONFIG, { TEST_LORA_API_KEY: 'test-key-123' });
+		expect(key).toBe('test-key-123');
+	});
+
+	test('throws when env variable is missing', () => {
+		expect(() => readApiKey(PROVIDER_CONFIG, {})).toThrow('Missing required environment variable');
+	});
+
+	test('throws when env variable is whitespace-only', () => {
+		expect(() => readApiKey(PROVIDER_CONFIG, { TEST_LORA_API_KEY: '  ' })).toThrow(
+			'Missing required environment variable',
+		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// loadUserPrompt
+// ---------------------------------------------------------------------------
+
+describe('loadUserPrompt', () => {
+	test('loads and trims prompt text', async () => {
+		const tmpFile = join(createTempDir('prompt-'), 'prompt.txt');
+		writeFileSync(tmpFile, '  hello world  \n\n', 'utf8');
+		expect(await loadUserPrompt(tmpFile)).toBe('hello world');
+	});
+
+	test('throws on empty prompt file', async () => {
+		const tmpFile = join(createTempDir('prompt-'), 'prompt.txt');
+		writeFileSync(tmpFile, '   \n\n', 'utf8');
+		await expect(loadUserPrompt(tmpFile)).rejects.toThrow('empty');
+	});
+
+	test('throws on nonexistent prompt file', async () => {
+		await expect(loadUserPrompt('/nonexistent/path/prompt.txt')).rejects.toThrow();
+	});
+});

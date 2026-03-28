@@ -3,8 +3,6 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { afterEach, describe, expect, test } from 'vitest';
-
 import {
 	LoraDatasetBootstrapPauseError,
 	ensureLoraDatasetPromptReady,
@@ -17,14 +15,13 @@ function createTempDir(prefix: string): string {
 
 const originalSinyukHome = process.env.SINYUK_HOME;
 
-afterEach(() => {
+function restoreSinyukHome(): void {
 	if (originalSinyukHome === undefined) {
 		delete process.env.SINYUK_HOME;
 		return;
 	}
-
 	process.env.SINYUK_HOME = originalSinyukHome;
-});
+}
 
 async function writePromptTemplate(homePath: string, content: string): Promise<void> {
 	const templatePath = join(
@@ -39,6 +36,8 @@ async function writePromptTemplate(homePath: string, content: string): Promise<v
 }
 
 describe('ensureLoraDatasetPromptReady', () => {
+	afterEach(() => restoreSinyukHome());
+
 	test('copies the prompt template into the dataset workspace and pauses on first run', async () => {
 		const homePath = createTempDir('sinyuk-home-');
 		const datasetPath = createTempDir('sinyuk-dataset-');
