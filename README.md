@@ -22,7 +22,7 @@ sinyuk-cli
 # Show effective merged config
 sinyuk-cli config show
 
-# Back up and reset lora-dataset feature config to the latest template
+# Back up and reset lora-dataset feature config and prompt template
 sinyuk-cli config reset lora-dataset --force
 
 # Run hello-world directly (feature + action contract)
@@ -42,4 +42,4 @@ sinyuk-cli lora-dataset crop --path ./images
 ## Notes
 
 - `sinyuk-cli init` only creates missing files under `~/.sinyuk-cli/`. It does not overwrite existing user config.
-- If `lora-dataset` feature config becomes stale after a schema change, use `sinyuk-cli config reset lora-dataset --force` to back up the old file and replace it with the latest bundled template.
+- If `lora-dataset` feature-home files become stale after a schema or prompt-template change, use `sinyuk-cli config reset lora-dataset --force` to back up the old files and replace them with the latest bundled templates.

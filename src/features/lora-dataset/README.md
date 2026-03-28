@@ -72,7 +72,7 @@ Feature domain for dataset captioning and crop preparation.
   - no fallback injection from global config into dataset config
 - Feature config reset is explicit:
   - `sinyuk-cli init` only creates the feature config if it is missing
-  - `sinyuk-cli config reset lora-dataset --force` backs up the current feature config and writes the latest bundled template
+  - `sinyuk-cli config reset lora-dataset --force` backs up the current feature-home config and prompt template files, then writes the latest bundled templates
 
 ## Current Status
 
@@ -81,7 +81,7 @@ Feature domain for dataset captioning and crop preparation.
   - canonical runner split for `caption` and `crop`
   - dataset-local workspace contract with `_lora_dataset/`
   - fail-fast bootstrap for local prompt initialization
-  - explicit `config reset lora-dataset --force` recovery path for stale feature config
+  - explicit `config reset lora-dataset --force` recovery path for stale feature-home templates
   - comprehensive feature-local test suite (scan, workspace, crop, caption, pipeline integration) — see [Tests](#tests) below
 - Stable assumptions:
   - provider, scheduler, analysis, and crop options remain feature config
@@ -89,7 +89,7 @@ Feature domain for dataset captioning and crop preparation.
   - prompt is dataset-local, not YAML-configured
 - Known gaps:
   - old `_meta/lora-dataset/` is only ignored for scanning; no auto-migration exists
-  - stale feature config is recoverable through `config reset`, but there is still no in-place schema migration
+  - stale feature-home files are recoverable through `config reset`, but there is still no in-place schema migration
 
 ## Tests
 

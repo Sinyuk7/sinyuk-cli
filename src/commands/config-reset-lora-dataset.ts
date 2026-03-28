@@ -1,11 +1,25 @@
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { Command, Option, UsageError } from 'clipanion';
 
 import type { SinyukCliContext } from '../cli/context.js';
 import { readLoraDatasetTemplate } from '../features/lora-dataset/shared/templates.js';
-import { getFeatureConfigPath } from '../platform/home.js';
+import { getFeatureConfigPath, getFeatureHomePath } from '../platform/home.js';
+
+type LoraDatasetFeatureHomeTemplateTarget = {
+	kind: 'featureConfig' | 'userPrompt';
+	path: string;
+};
+
+export type ResetLoraDatasetFeatureFileResult = {
+	path: string;
+	backupPath: string | null;
+};
+
+export type ResetLoraDatasetFeatureFilesResult = {
+	files: ResetLoraDatasetFeatureFileResult[];
+};
 
 function formatTimestampToken(date: Date): string {
 	const year = String(date.getFullYear());
@@ -18,47 +32,65 @@ function formatTimestampToken(date: Date): string {
 	return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
-export type ResetLoraDatasetFeatureConfigResult = {
-	configPath: string;
-	backupPath: string | null;
-};
+function getLoraDatasetFeatureHomeTemplateTargets(
+	sinyukHomePath?: string,
+): LoraDatasetFeatureHomeTemplateTarget[] {
+	const featureHomePath = getFeatureHomePath('lora-dataset', sinyukHomePath);
+
+	return [
+		{
+			kind: 'featureConfig',
+			path: getFeatureConfigPath('lora-dataset', sinyukHomePath),
+		},
+		{
+			kind: 'userPrompt',
+			path: join(featureHomePath, 'prompts', 'user-prompt.txt.example'),
+		},
+	];
+}
 
 /**
-"""Reset the lora-dataset feature config to the current bundled template.
+"""Reset all lora-dataset feature-home template files to the current bundled versions.
 
-INTENT: Give users one explicit recovery command that can replace stale feature config after schema upgrades
+INTENT: Give users one explicit recovery command that can replace stale feature-home config and prompt templates after schema or prompt contract upgrades
 INPUT: force flag, optional sinyuk home override, optional clock override
-OUTPUT: { configPath, backupPath }
-SIDE EFFECT: Create directories, optionally copy an existing config to a backup file, and write the latest template to disk
+OUTPUT: { files }
+SIDE EFFECT: Create directories, optionally copy existing files to timestamped backup files, and write the latest bundled templates to disk
 FAILURE: Throw Error when overwrite is requested without force or filesystem operations fail
 """
  */
-export function resetLoraDatasetFeatureConfig(options: {
+export function resetLoraDatasetFeatureFiles(options: {
 	force: boolean;
 	sinyukHomePath?: string;
 	now?: Date;
-}): ResetLoraDatasetFeatureConfigResult {
-	const configPath = getFeatureConfigPath('lora-dataset', options.sinyukHomePath);
-	const templateContent = readLoraDatasetTemplate('featureConfig');
-	const hasExistingConfig = existsSync(configPath);
+}): ResetLoraDatasetFeatureFilesResult {
+	const targets = getLoraDatasetFeatureHomeTemplateTargets(options.sinyukHomePath);
+	const existingPaths = targets.filter((target) => existsSync(target.path)).map((target) => target.path);
 
-	if (hasExistingConfig && !options.force) {
+	if (existingPaths.length > 0 && !options.force) {
 		throw new Error(
-			`Refusing to overwrite existing config at ${configPath}. Re-run with --force to back up and replace it.`,
+			`Refusing to overwrite existing lora-dataset feature files: ${existingPaths.join(', ')}. Re-run with --force to back up and replace them.`,
 		);
 	}
 
-	mkdirSync(dirname(configPath), { recursive: true });
+	const timestamp = formatTimestampToken(options.now ?? new Date());
+	const files = targets.map((target) => {
+		mkdirSync(dirname(target.path), { recursive: true });
 
-	let backupPath: string | null = null;
-	if (hasExistingConfig) {
-		const timestamp = formatTimestampToken(options.now ?? new Date());
-		backupPath = `${configPath}.bak-${timestamp}`;
-		copyFileSync(configPath, backupPath);
-	}
+		let backupPath: string | null = null;
+		if (existsSync(target.path)) {
+			backupPath = `${target.path}.bak-${timestamp}`;
+			copyFileSync(target.path, backupPath);
+		}
 
-	writeFileSync(configPath, templateContent, 'utf8');
-	return { configPath, backupPath };
+		writeFileSync(target.path, readLoraDatasetTemplate(target.kind), 'utf8');
+		return {
+			path: target.path,
+			backupPath,
+		};
+	});
+
+	return { files };
 }
 
 export class ConfigResetLoraDatasetCommand extends Command<SinyukCliContext> {
@@ -66,10 +98,11 @@ export class ConfigResetLoraDatasetCommand extends Command<SinyukCliContext> {
 
 	static override usage = Command.Usage({
 		category: 'Config',
-		description: 'Reset the lora-dataset feature config to the latest bundled template',
+		description:
+			'Reset the lora-dataset feature config and bundled prompt template to the latest versions',
 		examples: [
 			[
-				'Back up and replace the lora-dataset feature config',
+				'Back up and replace the lora-dataset feature config and prompt template',
 				'$0 config reset lora-dataset --force',
 			],
 		],
@@ -79,17 +112,20 @@ export class ConfigResetLoraDatasetCommand extends Command<SinyukCliContext> {
 
 	override async execute(): Promise<number> {
 		try {
-			const result = resetLoraDatasetFeatureConfig({ force: this.force });
+			const result = resetLoraDatasetFeatureFiles({ force: this.force });
 
-			if (result.backupPath) {
-				this.context.stdout.write(`Backed up ${result.configPath} to ${result.backupPath}\n`);
+			for (const file of result.files) {
+				if (file.backupPath) {
+					this.context.stdout.write(`Backed up ${file.path} to ${file.backupPath}\n`);
+				}
+				this.context.stdout.write(`Reset ${file.path} to the latest template\n`);
 			}
-			this.context.stdout.write(`Reset ${result.configPath} to the latest template\n`);
+
 			return 0;
 		} catch (error) {
 			if (
 				error instanceof Error &&
-				error.message.includes('Re-run with --force to back up and replace it.')
+				error.message.includes('Re-run with --force to back up and replace them.')
 			) {
 				throw new UsageError(error.message);
 			}
