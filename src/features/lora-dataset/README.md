@@ -33,6 +33,11 @@ Feature domain for dataset captioning and crop preparation.
 - User-level defaults live in `~/.sinyuk-cli/features/lora-dataset/`
 - User-level feature config path: `~/.sinyuk-cli/features/lora-dataset/config.yaml`
 - Prompt template path: `~/.sinyuk-cli/features/lora-dataset/prompts/user-prompt.txt.example`
+- User-level feature config sections:
+  - `provider` - base URLs, model, and API key env var
+  - `scheduler` - concurrency, timeout, and retry controls
+  - `analysis` - image resize and JPEG quality before upload
+  - `crop` - ratio and resolution options for the crop planner
 - Dataset-local mutable state lives in `<dataset>/_lora_dataset/`
 - Dataset-local files:
   - `config.yaml`
@@ -65,6 +70,9 @@ Feature domain for dataset captioning and crop preparation.
   - unknown fields fail immediately
   - missing required fields fail immediately
   - no fallback injection from global config into dataset config
+- Feature config reset is explicit:
+  - `sinyuk-cli init` only creates the feature config if it is missing
+  - `sinyuk-cli config reset lora-dataset --force` backs up the current feature config and writes the latest bundled template
 
 ## Current Status
 
@@ -73,6 +81,7 @@ Feature domain for dataset captioning and crop preparation.
   - canonical runner split for `caption` and `crop`
   - dataset-local workspace contract with `_lora_dataset/`
   - fail-fast bootstrap for local prompt initialization
+  - explicit `config reset lora-dataset --force` recovery path for stale feature config
   - comprehensive feature-local test suite (scan, workspace, crop, caption, pipeline integration) — see [Tests](#tests) below
 - Stable assumptions:
   - provider, scheduler, analysis, and crop options remain feature config
@@ -80,6 +89,7 @@ Feature domain for dataset captioning and crop preparation.
   - prompt is dataset-local, not YAML-configured
 - Known gaps:
   - old `_meta/lora-dataset/` is only ignored for scanning; no auto-migration exists
+  - stale feature config is recoverable through `config reset`, but there is still no in-place schema migration
 
 ## Tests
 
@@ -87,6 +97,7 @@ Test files live under `tests/` alongside the feature code. Shared fixtures and h
 
 | File | What It Tests | Needs API Key |
 |------|---------------|:---:|
+| `provider.test.ts` | Request payload contract, assistant content extraction, JSON-to-caption fallback | No |
 | `bootstrap.test.ts` | Prompt template copy, pause on first run, customization gate | ❌ |
 | `scan.test.ts` | Image discovery, path generation, exclusion rules | ❌ |
 | `workspace.test.ts` | Workspace paths, config validation, readApiKey, prompt loading | ❌ |
