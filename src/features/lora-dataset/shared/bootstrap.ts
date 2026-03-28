@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
 
 import { copyLoraDatasetTemplateIfMissing } from './templates.js';
+import { readLoraDatasetTemplate } from './templates.js';
 import type { LoraDatasetWorkspace } from './workspace.js';
 import { resolveLoraDatasetWorkspace } from './workspace.js';
 
@@ -55,7 +56,10 @@ export async function ensureLoraDatasetPromptReady(
 	await mkdir(workspace.workDirPath, { recursive: true });
 	const copiedDatasetConfig = copyLoraDatasetTemplateIfMissing('datasetConfig', workspace.configPath);
 
+	const bundledTemplateText = readLoraDatasetTemplate('userPrompt');
 	const templateText = await readFile(workspace.promptTemplatePath, 'utf8');
+	const hasCustomizedFeatureTemplate =
+		normalizePromptText(templateText) !== normalizePromptText(bundledTemplateText);
 	let promptText = '';
 
 	try {
@@ -67,6 +71,10 @@ export async function ensureLoraDatasetPromptReady(
 		}
 
 		await copyFile(workspace.promptTemplatePath, workspace.promptPath);
+		if (hasCustomizedFeatureTemplate) {
+			return workspace;
+		}
+
 		const messageLines = copiedDatasetConfig
 			? [`[Action] Copied dataset config to ${workspace.configPath}`]
 			: [];
@@ -79,7 +87,7 @@ export async function ensureLoraDatasetPromptReady(
 		]);
 	}
 
-	if (normalizePromptText(promptText) === normalizePromptText(templateText)) {
+	if (normalizePromptText(promptText) === normalizePromptText(bundledTemplateText)) {
 		const messageLines = copiedDatasetConfig
 			? [`[Action] Copied dataset config to ${workspace.configPath}`]
 			: [];

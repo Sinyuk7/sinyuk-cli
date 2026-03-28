@@ -7,6 +7,7 @@ import {
 	LoraDatasetBootstrapPauseError,
 	ensureLoraDatasetPromptReady,
 } from '../shared/bootstrap.js';
+import { readLoraDatasetTemplate } from '../shared/templates.js';
 import { resolveLoraDatasetWorkspace } from '../shared/workspace.js';
 
 function createTempDir(prefix: string): string {
@@ -42,14 +43,15 @@ describe('ensureLoraDatasetPromptReady', () => {
 		const homePath = createTempDir('sinyuk-home-');
 		const datasetPath = createTempDir('sinyuk-dataset-');
 		process.env.SINYUK_HOME = homePath;
-		await writePromptTemplate(homePath, 'template prompt\n');
+		const bundledPromptTemplate = readLoraDatasetTemplate('userPrompt');
+		await writePromptTemplate(homePath, bundledPromptTemplate);
 
 		await expect(ensureLoraDatasetPromptReady(datasetPath)).rejects.toBeInstanceOf(
 			LoraDatasetBootstrapPauseError,
 		);
 
 		const workspace = resolveLoraDatasetWorkspace(datasetPath);
-		await expect(readFile(workspace.promptPath, 'utf8')).resolves.toBe('template prompt\n');
+		await expect(readFile(workspace.promptPath, 'utf8')).resolves.toBe(bundledPromptTemplate);
 		await expect(readFile(workspace.configPath, 'utf8')).resolves.toContain('request:');
 	});
 
@@ -57,7 +59,8 @@ describe('ensureLoraDatasetPromptReady', () => {
 		const homePath = createTempDir('sinyuk-home-');
 		const datasetPath = createTempDir('sinyuk-dataset-');
 		process.env.SINYUK_HOME = homePath;
-		await writePromptTemplate(homePath, 'template prompt\n');
+		const bundledPromptTemplate = readLoraDatasetTemplate('userPrompt');
+		await writePromptTemplate(homePath, bundledPromptTemplate);
 
 		const workspace = resolveLoraDatasetWorkspace(datasetPath);
 		mkdirSync(workspace.workDirPath, { recursive: true });
@@ -66,11 +69,57 @@ describe('ensureLoraDatasetPromptReady', () => {
 			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  keepSubjectFirst: true\n',
 			'utf8',
 		);
-		writeFileSync(workspace.promptPath, 'template prompt\r\n', 'utf8');
+		writeFileSync(
+			workspace.promptPath,
+			bundledPromptTemplate.replace(/\n/g, '\r\n'),
+			'utf8',
+		);
 
 		await expect(ensureLoraDatasetPromptReady(datasetPath)).rejects.toBeInstanceOf(
 			LoraDatasetBootstrapPauseError,
 		);
+	});
+
+	test('continues immediately after copying a customized feature-home prompt template on first run', async () => {
+		const homePath = createTempDir('sinyuk-home-');
+		const datasetPath = createTempDir('sinyuk-dataset-');
+		process.env.SINYUK_HOME = homePath;
+		await writePromptTemplate(
+			homePath,
+			'Use trigger words: silver hair, maid outfit, indoor portrait.\nReturn strict JSON only.\n',
+		);
+
+		const workspace = resolveLoraDatasetWorkspace(datasetPath);
+
+		await expect(ensureLoraDatasetPromptReady(datasetPath)).resolves.toEqual(workspace);
+		await expect(readFile(workspace.promptPath, 'utf8')).resolves.toBe(
+			'Use trigger words: silver hair, maid outfit, indoor portrait.\nReturn strict JSON only.\n',
+		);
+	});
+
+	test('accepts dataset-local prompt that matches a customized feature-home prompt template', async () => {
+		const homePath = createTempDir('sinyuk-home-');
+		const datasetPath = createTempDir('sinyuk-dataset-');
+		process.env.SINYUK_HOME = homePath;
+		await writePromptTemplate(
+			homePath,
+			'Use trigger words: silver hair, maid outfit, indoor portrait.\nReturn strict JSON only.\n',
+		);
+
+		const workspace = resolveLoraDatasetWorkspace(datasetPath);
+		mkdirSync(workspace.workDirPath, { recursive: true });
+		writeFileSync(
+			workspace.configPath,
+			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  keepSubjectFirst: true\n',
+			'utf8',
+		);
+		writeFileSync(
+			workspace.promptPath,
+			'Use trigger words: silver hair, maid outfit, indoor portrait.\nReturn strict JSON only.\n',
+			'utf8',
+		);
+
+		await expect(ensureLoraDatasetPromptReady(datasetPath)).resolves.toEqual(workspace);
 	});
 
 	test('returns the dataset workspace after the prompt has been customized', async () => {
