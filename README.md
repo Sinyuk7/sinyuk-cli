@@ -26,3 +26,7 @@ sinyuk-cli config show
 sinyuk-cli hello-world run --path . --all
 sinyuk-cli hello-world run --path . --file src/index.ts --dry-run
 ```
+
+## Feature Docs
+
+- `lora-dataset`: [src/features/lora-dataset/README.md](src/features/lora-dataset/README.md)

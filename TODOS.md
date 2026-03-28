@@ -25,7 +25,7 @@ Source: `/plan-eng-review` decisions (`14A`, `15A`, `16A`), `/plan-ceo-review` a
 
 **Why:** Current plan intentionally uses minimal tests in Phase 1; without predefined gates, expansion becomes ad-hoc and delayed.
 
-**Context:** Current baseline: 3 smoke tests (`cli-help`, `config-show`, `hello-world-ci-failfast`) + 2 unit tests (`config-loader`, `fallback-policy`). Aligned with AGENTS.md "Contract-First Testing" strategy. This TODO defines when broader coverage becomes mandatory — candidate triggers: second side-effecting feature, remote operations, first regression incident.
+**Context:** Current baseline: 3 smoke tests (`cli-help`, `config-show`, `hello-world-ci-failfast`) + 2 unit tests (`config-loader`, `fallback-policy`) + 6 feature-local test files for `lora-dataset` (scan, workspace, crop, caption E2E, pipeline E2E, bootstrap). Aligned with AGENTS.md "Contract-First Testing" strategy. This TODO defines when broader coverage becomes mandatory — candidate triggers: second side-effecting feature, remote operations, first regression incident.
 
 **Effort:** S (human ~1hr / CC ~5 min)
 **Priority:** P2

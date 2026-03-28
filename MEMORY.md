@@ -80,6 +80,20 @@ features/
 - workbench.ts L57-59: stdin/stdout type mismatch (Readable vs ReadStream) — TODO-007
 - hello-world/command.ts: `path` property collides with Clipanion base class — TODO-007
 
+### Secrets & Credential Rule
+
+- **NEVER hardcode API keys, tokens, or passwords in source files** — this includes test files, config files, and any tracked code
+- **Environment variable injection only**: all secrets must be read from environment variables at runtime; test files must read from `process.env` and skip/fail gracefully when the variable is missing
+- **Recommended env var naming**: `TEST_<SERVICE>_API_KEY` for test-specific credentials (e.g. `TEST_LORA_API_KEY`)
+- **`.env` files are gitignored**: if a `.env` file is used for local convenience, it must be listed in `.gitignore`
+- **Violation severity**: hardcoding a secret in a committed file is a blocking-level issue — must be caught and reverted before any push
+
+### E2E Test Design Rule
+
+- **One test dataset = dedicated test cases**: each test data directory under `.local-data/` represents a distinct scenario; design specific E2E cases per dataset rather than reusing datasets across unrelated tests
+- **Dataset naming convention**: `test-{N}-{description}` (e.g. `test-1-image-1`, `test-2-image-5`) — the name should describe the scenario's key characteristic
+- **E2E tests that call real external APIs**: must read credentials from environment variables, set generous timeouts, and include clear skip logic when credentials are unavailable
+
 ### Dependencies Added
 
 - `zustand` — React state management (<1KB gzip), used for per-Action stores
