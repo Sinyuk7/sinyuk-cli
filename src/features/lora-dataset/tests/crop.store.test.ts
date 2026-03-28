@@ -9,6 +9,11 @@ const { mockLoadCropScanContext, mockExecuteCropPlan } = vi.hoisted(() => ({
 	mockExecuteCropPlan: vi.fn(),
 }));
 
+const { mockReadRememberedLoraDatasetPath, mockRememberLoraDatasetPath } = vi.hoisted(() => ({
+	mockReadRememberedLoraDatasetPath: vi.fn(),
+	mockRememberLoraDatasetPath: vi.fn(),
+}));
+
 vi.mock('../shared/crop-plan.js', async () => {
 	const actual =
 		await vi.importActual<typeof import('../shared/crop-plan.js')>('../shared/crop-plan.js');
@@ -21,6 +26,11 @@ vi.mock('../shared/crop-plan.js', async () => {
 
 vi.mock('../crop/run.js', () => ({
 	executeCropPlan: mockExecuteCropPlan,
+}));
+
+vi.mock('../shared/last-path.js', () => ({
+	readRememberedLoraDatasetPath: mockReadRememberedLoraDatasetPath,
+	rememberLoraDatasetPath: mockRememberLoraDatasetPath,
 }));
 
 import { createCropStore } from '../crop/store.js';
@@ -58,6 +68,9 @@ describe('crop store', () => {
 	beforeEach(() => {
 		mockLoadCropScanContext.mockReset();
 		mockExecuteCropPlan.mockReset();
+		mockReadRememberedLoraDatasetPath.mockReset();
+		mockRememberLoraDatasetPath.mockReset();
+		mockReadRememberedLoraDatasetPath.mockReturnValue(null);
 	});
 
 	test('transitions to empty when scan finds no supported images', async () => {
@@ -72,6 +85,15 @@ describe('crop store', () => {
 		expect(store.getState().step).toBe('empty');
 		expect(store.getState().scanResult).toEqual(EMPTY_SCAN_RESULT);
 		expect(store.getState().errorMessage).toBeNull();
+		expect(mockRememberLoraDatasetPath).toHaveBeenCalledWith('/tmp/empty-dataset');
+	});
+
+	test('uses the remembered dataset path when no initial path is provided', () => {
+		mockReadRememberedLoraDatasetPath.mockReturnValue('/tmp/remembered-dataset');
+
+		const store = createTestStore();
+
+		expect(store.getState().pathInput).toBe('/tmp/remembered-dataset');
 	});
 
 	test('setSelectedRatios normalizes order and prunes stale resolutions', () => {

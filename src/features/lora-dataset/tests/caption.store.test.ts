@@ -11,6 +11,11 @@ const { mockLoadScanContext, mockRunBatch, mockRunPreview } = vi.hoisted(() => (
 	mockRunPreview: vi.fn(),
 }));
 
+const { mockReadRememberedLoraDatasetPath, mockRememberLoraDatasetPath } = vi.hoisted(() => ({
+	mockReadRememberedLoraDatasetPath: vi.fn(),
+	mockRememberLoraDatasetPath: vi.fn(),
+}));
+
 vi.mock('../shared/pipeline.js', async () => {
 	const actual =
 		await vi.importActual<typeof import('../shared/pipeline.js')>('../shared/pipeline.js');
@@ -22,6 +27,11 @@ vi.mock('../shared/pipeline.js', async () => {
 		runPreview: mockRunPreview,
 	};
 });
+
+vi.mock('../shared/last-path.js', () => ({
+	readRememberedLoraDatasetPath: mockReadRememberedLoraDatasetPath,
+	rememberLoraDatasetPath: mockRememberLoraDatasetPath,
+}));
 
 import { createCaptionStore } from '../caption/store.js';
 
@@ -78,6 +88,9 @@ describe('caption store', () => {
 		mockLoadScanContext.mockReset();
 		mockRunBatch.mockReset();
 		mockRunPreview.mockReset();
+		mockReadRememberedLoraDatasetPath.mockReset();
+		mockRememberLoraDatasetPath.mockReset();
+		mockReadRememberedLoraDatasetPath.mockReturnValue(null);
 	});
 
 	test('transitions to empty when scan finds no supported images', async () => {
@@ -94,5 +107,14 @@ describe('caption store', () => {
 		expect(store.getState().step).toBe('empty');
 		expect(store.getState().scanResult).toEqual(EMPTY_SCAN_RESULT);
 		expect(store.getState().errorMessage).toBeNull();
+		expect(mockRememberLoraDatasetPath).toHaveBeenCalledWith('/tmp/empty-dataset');
+	});
+
+	test('uses the remembered dataset path when no initial path is provided', () => {
+		mockReadRememberedLoraDatasetPath.mockReturnValue('/tmp/remembered-dataset');
+
+		const store = createTestStore();
+
+		expect(store.getState().pathInput).toBe('/tmp/remembered-dataset');
 	});
 });

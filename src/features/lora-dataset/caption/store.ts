@@ -4,6 +4,7 @@ import type { PlatformConfig } from '../../../platform/config/schema.js';
 import type { EntryMode, ExecutionContext } from '../../../platform/execution-context.js';
 import type { LoraScanResult } from '../shared/artifacts.js';
 import { LoraDatasetBootstrapPauseError } from '../shared/bootstrap.js';
+import { readRememberedLoraDatasetPath, rememberLoraDatasetPath } from '../shared/last-path.js';
 import { loadScanContext, runBatch, runPreview } from '../shared/pipeline.js';
 import { getLoraDatasetFeatureConfig, type LoraDatasetDatasetConfig } from '../shared/schema.js';
 import type { BatchRunResult, PreviewResult } from '../shared/types.js';
@@ -71,6 +72,7 @@ export type CreateCaptionStoreOptions = {
  */
 export function createCaptionStore(options: CreateCaptionStoreOptions) {
 	const config = getLoraDatasetFeatureConfig(options.configSnapshot);
+	const rememberedPath = readRememberedLoraDatasetPath();
 	let returnStep: Exclude<CaptionStep, 'error'> = 'input';
 
 	const failTo = (
@@ -84,7 +86,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 
 	return createStore<CaptionStore>((set, get) => ({
 		step: 'input',
-		pathInput: options.initialPath ?? process.cwd(),
+		pathInput: options.initialPath ?? rememberedPath ?? process.cwd(),
 		promptPreviewLines: [],
 		datasetConfig: null,
 		workspace: null,
@@ -113,6 +115,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 				});
 				try {
 					const loaded = await loadScanContext({ pathInput });
+					rememberLoraDatasetPath(loaded.scanResult.basePath);
 					if (loaded.scanResult.images.length === 0) {
 						set({
 							step: 'empty',

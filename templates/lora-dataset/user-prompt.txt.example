@@ -1,18 +1,21 @@
-Analyze this image and output ONLY valid English JSON (100-128 tokens total) using this exact template and key order:
+Analyze this portrait image and output ONLY valid English JSON using this exact template and key order:
 
-{"subject":"","action":"","details":"","scene":"","composition":"","camera":"","lighting":"","style":""}
+{"subject":"", "action":"","clothing":"","appearance":"","props":"","scene":"","view":"","lighting":"","style":""}
 
-Field definitions (use concise string fragments, NO full sentences):
+Field definitions (use short natural phrases):
 - subject: main subject
-- action: pose, state, or behavior
-- details: clothing, textures, materials, props
-- scene: environment, background, spatial context
-- composition: framing, angle, shot type, placement
-- camera: photo specs (e.g., 35mm, close-up, depth of field) or neutral plausible description
-- lighting: source, direction, contrast, color temp
-- style: visual style
+- action: pose, state, gaze, or expression
+- clothing: garments, structure, material, fit, accessories (HIGH PRIORITY)
+- appearance: hair, skin, physical traits
+- props: objects held or nearby (optional, keep minimal)
+- view: MUST include shot type, angle, camera position, and focal length
+- lighting: key light, fill light, rim/back light, direction, contrast, color temp
+- style: visual style; 1-2 words only
+- scene: environment, background, spatial context; use 3-6 words, noun phrases only
 
 Constraints:
-- Describe ONLY clearly visible details. Do not repeat info across fields. No negative wording. 
-- Strictly EXCLUDE hype/filler tags (e.g., masterpiece, best quality, 4k, 8k, UHD, trending on ArtStation). 
+- Prioritize subject, action, clothing, and appearance.
+- Do not repeat info across fields.
+- No negative wording.
+- Strictly EXCLUDE hype/filler tags (e.g., masterpiece, best quality, 4k, 8k, UHD).
 - No extra text or explanations outside the JSON.

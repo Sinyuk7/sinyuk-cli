@@ -2,6 +2,7 @@ import { createStore } from 'zustand/vanilla';
 
 import type { PlatformConfig } from '../../../platform/config/schema.js';
 import type { LoraScanResult } from '../shared/artifacts.js';
+import { readRememberedLoraDatasetPath, rememberLoraDatasetPath } from '../shared/last-path.js';
 import { buildCropPlan, loadCropScanContext } from '../shared/crop-plan.js';
 import { getLoraDatasetFeatureConfig } from '../shared/schema.js';
 import type {
@@ -88,6 +89,7 @@ function orderSelectedRatios(
  */
 export function createCropStore(options: CreateCropStoreOptions) {
 	const config = getLoraDatasetFeatureConfig(options.configSnapshot);
+	const rememberedPath = readRememberedLoraDatasetPath();
 	const availableRatios = config.crop.ratioOptions;
 	const availableResolutions = config.crop.resolutionOptions;
 	let returnStep: Exclude<CropStep, 'error'> = 'input';
@@ -103,7 +105,7 @@ export function createCropStore(options: CreateCropStoreOptions) {
 
 	return createStore<CropStore>((set, get) => ({
 		step: 'input',
-		pathInput: options.initialPath ?? process.cwd(),
+		pathInput: options.initialPath ?? rememberedPath ?? process.cwd(),
 		scanResult: null,
 		ratioStats: [],
 		availableRatios,
@@ -145,6 +147,7 @@ export function createCropStore(options: CreateCropStoreOptions) {
 						pathInput,
 						ratioOptions: availableRatios,
 					});
+					rememberLoraDatasetPath(loaded.scanResult.basePath);
 					if (loaded.scanResult.images.length === 0) {
 						set({
 							step: 'empty',
