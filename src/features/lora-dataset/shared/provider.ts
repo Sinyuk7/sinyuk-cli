@@ -7,7 +7,10 @@ import type {
 	LoraDatasetFeatureConfig,
 	LoraDatasetProviderConfig,
 } from './schema.js';
+import { buildCaptionFromResponseText } from './response-content.js';
 import { readLoraDatasetTemplate } from './templates.js';
+
+export { buildCaptionFromResponseText };
 
 type OpenAiChatTextPart = {
 	type: 'text';
@@ -316,110 +319,6 @@ export function extractAssistantContentText(
 	}
 
 	throw new ProviderParseError('Could not extract text from provider response.');
-}
-
-function extractJsonText(responseText: string): string {
-	const stripped = responseText.trim();
-	if (stripped.startsWith('{') || stripped.startsWith('[')) {
-		return stripped;
-	}
-
-	const codeBlockMatch = stripped.match(/```(?:json)?\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*```/);
-	if (codeBlockMatch?.[1]) {
-		return codeBlockMatch[1].trim();
-	}
-
-	const firstBrace = stripped.indexOf('{');
-	const lastBrace = stripped.lastIndexOf('}');
-	if (firstBrace !== -1 && lastBrace > firstBrace) {
-		return stripped.slice(firstBrace, lastBrace + 1);
-	}
-
-	const firstBracket = stripped.indexOf('[');
-	const lastBracket = stripped.lastIndexOf(']');
-	if (firstBracket !== -1 && lastBracket > firstBracket) {
-		return stripped.slice(firstBracket, lastBracket + 1);
-	}
-
-	throw new ProviderParseError('No JSON object or array found in provider response text.');
-}
-
-function flattenValue(input: unknown): string[] {
-	if (input === null || input === undefined) {
-		return [];
-	}
-
-	if (Array.isArray(input)) {
-		return input.flatMap((item) => flattenValue(item));
-	}
-
-	if (typeof input === 'object') {
-		return Object.values(input as Record<string, unknown>).flatMap((value) => flattenValue(value));
-	}
-
-	const normalized = String(input).trim();
-	return normalized.length > 0 ? [normalized] : [];
-}
-
-function assembleCaption(options: {
-	parsedPayload: unknown;
-	datasetConfig: LoraDatasetDatasetConfig;
-}): string {
-	const separator = options.datasetConfig.captionAssembly.separator;
-
-	if (
-		typeof options.parsedPayload === 'object' &&
-		options.parsedPayload !== null &&
-		!Array.isArray(options.parsedPayload)
-	) {
-		const payload = options.parsedPayload as Record<string, unknown>;
-		const subjectValues = flattenValue(payload.subject);
-		const otherValues = Object.entries(payload)
-			.filter(([key]) => key !== 'subject')
-			.flatMap(([, value]) => flattenValue(value));
-		const orderedValues = options.datasetConfig.captionAssembly.keepSubjectFirst
-			? [...subjectValues, ...otherValues]
-			: [...otherValues, ...subjectValues];
-
-		return orderedValues.filter(Boolean).join(separator);
-	}
-
-	return flattenValue(options.parsedPayload).join(separator);
-}
-
-/**
-"""Convert assistant content into the final caption, with JSON-first and text-fallback behavior.
-
-INTENT: Preserve structured caption assembly when the model returns JSON while still succeeding on plain-text content
-INPUT: responseText, datasetConfig
-OUTPUT: { caption, parsedPayload? }
-SIDE EFFECT: None
-FAILURE: None
-"""
- */
-export function buildCaptionFromResponseText(options: {
-	responseText: string;
-	datasetConfig: LoraDatasetDatasetConfig;
-}): {
-	caption: string;
-	parsedPayload?: unknown;
-} {
-	const trimmedText = options.responseText.trim();
-
-	try {
-		const parsedPayload = JSON.parse(extractJsonText(trimmedText)) as unknown;
-		return {
-			parsedPayload,
-			caption: assembleCaption({
-				parsedPayload,
-				datasetConfig: options.datasetConfig,
-			}),
-		};
-	} catch {
-		return {
-			caption: trimmedText,
-		};
-	}
 }
 
 /**

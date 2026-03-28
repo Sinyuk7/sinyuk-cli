@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { PlatformConfig } from './config/schema.js';
+import { createEnvironmentSnapshot } from './environment.js';
 import { createRunLogger, type RunLogger } from './logging/logger.js';
 
 export type EntryMode = 'cli' | 'workbench';
@@ -39,7 +40,7 @@ export function createExecutionContext(options: {
 		runId,
 		entryMode: options.entryMode,
 		configSnapshot: options.configSnapshot,
-		envSnapshot: Object.freeze({ ...process.env }),
+		envSnapshot: createEnvironmentSnapshot(),
 		logger: createRunLogger(runId),
 		abortSignal: options.abortSignal,
 		dryRun: options.dryRun,
