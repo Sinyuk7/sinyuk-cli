@@ -5,4 +5,13 @@ request:
 
 captionAssembly:
   separator: ". "
-  keepSubjectFirst: true
+  outputFields:
+    - subject
+    - action
+    - clothing
+    - appearance
+    - props
+    - scene
+    - view
+    - lighting
+    - style

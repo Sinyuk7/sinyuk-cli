@@ -70,12 +70,22 @@ export const LoraDatasetRequestConfigSchema = z
 	})
 	.strict();
 
+const CaptionOutputFieldSchema = z
+	.string()
+	.trim()
+	.min(1)
+	.regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, 'must use letters, numbers, "_" or "-"');
+
 export const LoraDatasetCaptionAssemblyConfigSchema = z
 	.object({
 		separator: z.string().min(1),
-		keepSubjectFirst: z.boolean(),
+		outputFields: z.array(CaptionOutputFieldSchema).min(1),
 	})
-	.strict();
+	.strict()
+	.refine((value) => new Set(value.outputFields).size === value.outputFields.length, {
+		message: 'outputFields must not contain duplicates',
+		path: ['outputFields'],
+	});
 
 export const LoraDatasetDatasetConfigSchema = z
 	.object({

@@ -49,7 +49,6 @@ function ScreenFrame(props: ScreenFrameProps): React.JSX.Element {
  * FAILURE: Store transitions to 'error' step; UI shows error message + retry
  */
 export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
-	const autoPreviewRequestedRef = useRef(false);
 	const initialScanRequestedRef = useRef(false);
 	const storeRef = useRef(
 		createCaptionStore({
@@ -68,6 +67,7 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 	const pathInput = useStore(store, (s) => s.pathInput);
 	const apiKeyEnvName = useStore(store, (s) => s.apiKeyEnvName);
 	const promptPreviewLines = useStore(store, (s) => s.promptPreviewLines);
+	const executionPlanLines = useStore(store, (s) => s.executionPlanLines);
 	const scanResult = useStore(store, (s) => s.scanResult);
 	const previewResult = useStore(store, (s) => s.previewResult);
 	const batchResult = useStore(store, (s) => s.batchResult);
@@ -86,18 +86,6 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 		}
 	}, [actions, props.initialPath, scanResult, step]);
 
-	useEffect(() => {
-		if (step !== 'previewing' || !scanResult || previewResult) {
-			autoPreviewRequestedRef.current = false;
-			return;
-		}
-
-		if (!autoPreviewRequestedRef.current) {
-			autoPreviewRequestedRef.current = true;
-			void actions.runPreview();
-		}
-	}, [actions, previewResult, scanResult, step]);
-
 	if (step === 'input') {
 		return (
 			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
@@ -110,6 +98,39 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 						void actions.startScan(value);
 					}}
 				/>
+			</ScreenFrame>
+		);
+	}
+
+	if (step === 'mode-select' && scanResult) {
+		return (
+			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
+				<Text color="yellowBright">Scanned {scanResult.images.length} images.</Text>
+				{executionPlanLines.length > 0 && (
+					<Box flexDirection="column">
+						<Text dimColor>Execution plan:</Text>
+						{executionPlanLines.map((line, index) => (
+							<Text key={index} dimColor>
+								{'  '}
+								{line}
+							</Text>
+						))}
+					</Box>
+				)}
+				{promptPreviewLines.length > 0 && (
+					<Box flexDirection="column">
+						<Text dimColor>Prompt preview:</Text>
+						{promptPreviewLines.map((line, index) => (
+							<Text key={index} dimColor>
+								{'  '}
+								{line}
+							</Text>
+						))}
+					</Box>
+				)}
+				<Text>Run preview first? [Y/n]</Text>
+				<Text dimColor>Y = preview one sample first, n = skip preview and go to full batch confirm.</Text>
+				<ConfirmInput onConfirm={() => void actions.runPreview()} onCancel={() => actions.openConfirm()} />
 			</ScreenFrame>
 		);
 	}
@@ -166,6 +187,17 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 	if (step === 'preview-result' && previewResult) {
 		return (
 			<ScreenFrame breadcrumb={PREVIEW_BREADCRUMB}>
+				{executionPlanLines.length > 0 && (
+					<Box flexDirection="column">
+						<Text dimColor>Execution plan:</Text>
+						{executionPlanLines.map((line, index) => (
+							<Text key={index} dimColor>
+								{'  '}
+								{line}
+							</Text>
+						))}
+					</Box>
+				)}
 				{promptPreviewLines.length > 0 && (
 					<Box flexDirection="column">
 						<Text dimColor>Prompt preview:</Text>
@@ -188,6 +220,17 @@ export function CaptionScreen(props: CaptionScreenProps): React.JSX.Element {
 	if (step === 'confirm') {
 		return (
 			<ScreenFrame breadcrumb={CAPTION_BREADCRUMB}>
+				{executionPlanLines.length > 0 && (
+					<Box flexDirection="column">
+						<Text dimColor>Execution plan:</Text>
+						{executionPlanLines.map((line, index) => (
+							<Text key={index} dimColor>
+								{'  '}
+								{line}
+							</Text>
+						))}
+					</Box>
+				)}
 				<Text color="yellowBright">
 					Confirm: run caption on {scanResult?.images.length ?? 0} images?
 				</Text>

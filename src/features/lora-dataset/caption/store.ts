@@ -4,6 +4,7 @@ import type { PlatformConfig } from '../../../platform/config/schema.js';
 import type { EntryMode, ExecutionContext } from '../../../platform/execution-context.js';
 import type { LoraScanResult } from '../shared/artifacts.js';
 import { isMissingApiKeyError, persistApiKeyToEnvironment } from '../shared/api-key.js';
+import { buildCaptionExecutionPlanSummary } from '../shared/caption-execution-plan.js';
 import { readRememberedLoraDatasetPath, rememberLoraDatasetPath } from '../shared/last-path.js';
 import { loadScanContext, runBatch, runPreview } from '../shared/pipeline.js';
 import { getLoraDatasetFeatureConfig, type LoraDatasetDatasetConfig } from '../shared/schema.js';
@@ -14,6 +15,7 @@ import type { LoraDatasetWorkspace } from '../shared/workspace.js';
 type CaptionStep =
 	| 'input'
 	| 'scanning'
+	| 'mode-select'
 	| 'empty'
 	| 'api-key-input'
 	| 'previewing'
@@ -29,6 +31,7 @@ export type CaptionState = {
 	apiKeyInput: string;
 	apiKeyEnvName: string | null;
 	promptPreviewLines: string[];
+	executionPlanLines: string[];
 	datasetConfig: LoraDatasetDatasetConfig | null;
 	workspace: LoraDatasetWorkspace | null;
 	scanResult: LoraScanResult | null;
@@ -94,6 +97,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 		apiKeyInput: '',
 		apiKeyEnvName: null,
 		promptPreviewLines: [],
+		executionPlanLines: [],
 		datasetConfig: null,
 		workspace: null,
 		scanResult: null,
@@ -122,10 +126,18 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 					errorMessage: null,
 					previewResult: null,
 					batchResult: null,
+					executionPlanLines: [],
 				});
 				try {
 					const loaded = await loadScanContext({ pathInput });
 					rememberLoraDatasetPath(loaded.scanResult.basePath);
+					const executionPlan = buildCaptionExecutionPlanSummary({
+						imageCount: loaded.scanResult.images.length,
+						featureConfig: config,
+						datasetConfig: loaded.datasetConfig,
+						concurrencyOverride: options.concurrencyOverride ?? null,
+					});
+
 					if (loaded.scanResult.images.length === 0) {
 						set({
 							step: 'empty',
@@ -133,16 +145,18 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 							workspace: loaded.workspace,
 							scanResult: loaded.scanResult,
 							promptPreviewLines: loaded.promptPreviewLines,
+							executionPlanLines: executionPlan.lines,
 						});
 						return;
 					}
 
 					set({
-						step: 'previewing',
+						step: 'mode-select',
 						datasetConfig: loaded.datasetConfig,
 						workspace: loaded.workspace,
 						scanResult: loaded.scanResult,
 						promptPreviewLines: loaded.promptPreviewLines,
+						executionPlanLines: executionPlan.lines,
 					});
 				} catch (error) {
 					failTo(set, (error as Error).message, 'input');
@@ -159,6 +173,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 					apiKeyInput: '',
 					apiKeyEnvName: null,
 					errorMessage: null,
+					executionPlanLines: [],
 				});
 			},
 
@@ -191,7 +206,7 @@ export function createCaptionStore(options: CreateCaptionStoreOptions) {
 						return;
 					}
 
-					failTo(set, (error as Error).message, 'input');
+					failTo(set, (error as Error).message, 'mode-select');
 				}
 			},
 

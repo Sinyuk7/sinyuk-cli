@@ -109,13 +109,13 @@ describe('getLoraDatasetFeatureConfig', () => {
 			},
 		});
 
-		expect(config.crop.ratioOptions).toEqual(['1:1', '3:4', '4:3']);
-		expect(config.crop.resolutionOptions).toEqual([512, 768, 1024]);
+		expect(config.crop.ratioOptions).toEqual(['1:1', '2:3', '3:2']);
+		expect(config.crop.resolutionOptions).toEqual([1024, 1280, 1536]);
 	});
 
 	test('loads bundled system prompt template', () => {
 		const systemPrompt = readLoraDatasetTemplate('systemPrompt').trim();
-		expect(systemPrompt).toContain('Output strict JSON only.');
+		expect(systemPrompt).toContain('Output MUST be raw JSON only.');
 		expect(systemPrompt.length).toBeGreaterThan(20);
 	});
 });
@@ -131,7 +131,8 @@ describe('loadLoraDatasetDatasetConfig', () => {
   maxOutputTokens: ${DATASET_CONFIG.request.maxOutputTokens}
 captionAssembly:
   separator: "${DATASET_CONFIG.captionAssembly.separator}"
-  keepSubjectFirst: ${DATASET_CONFIG.captionAssembly.keepSubjectFirst}
+  outputFields:
+${DATASET_CONFIG.captionAssembly.outputFields.map((field) => `    - ${field}`).join('\n')}
 `,
 			'utf8',
 		);
@@ -143,7 +144,7 @@ captionAssembly:
 		const configPath = join(createTempDir('dataset-config-'), 'config.yaml');
 		writeFileSync(
 			configPath,
-			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\n  temp: 123\ncaptionAssembly:\n  separator: ". "\n  keepSubjectFirst: true\n',
+			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\n  temp: 123\ncaptionAssembly:\n  separator: ". "\n  outputFields:\n    - subject\n',
 			'utf8',
 		);
 

@@ -4,7 +4,8 @@ Feature domain for dataset captioning and crop preparation.
 
 ## What It Does
 
-- `caption`: scan dataset images, bootstrap local prompt, preview one sample, then run full caption batch
+- `caption`: scan dataset images, bootstrap local prompt, show execution-cost summary, then choose preview or direct full batch
+- `caption transform`: post-process existing caption `.txt` files with trigger insertion (prefix/suffix/placeholder)
 - `crop`: scan dataset images, preview ratio distribution, build a multi-spec crop plan, then generate `dataset-crop-*` outputs
 
 ## Execution Chain
@@ -12,6 +13,7 @@ Feature domain for dataset captioning and crop preparation.
 - CLI domain entry: [command.ts](/D:/github/sinyuk-cli/src/features/lora-dataset/command.ts)
 - Action adapters:
   - [caption/command.ts](/D:/github/sinyuk-cli/src/features/lora-dataset/caption/command.ts)
+  - [caption/transform-command.ts](/D:/github/sinyuk-cli/src/features/lora-dataset/caption/transform-command.ts)
   - [crop/command.ts](/D:/github/sinyuk-cli/src/features/lora-dataset/crop/command.ts)
 - Canonical non-interactive runners:
   - [caption/run.ts](/D:/github/sinyuk-cli/src/features/lora-dataset/caption/run.ts)
@@ -45,6 +47,10 @@ Feature domain for dataset captioning and crop preparation.
   - `run-summary.json`
   - `failed-items.txt`
   - `raw/*.json`
+- Dataset config sections:
+  - `request` - `temperature`, `topP`, `maxOutputTokens`
+  - `captionAssembly.separator` - join token between selected output fields
+  - `captionAssembly.outputFields` - ordered JSON-field whitelist for final caption assembly
 - Caption `.txt` outputs stay next to source images
 - Crop outputs stay in `dataset-crop-<ratio>-<longEdge>/`
 - Scanner excludes:
@@ -67,6 +73,8 @@ Feature domain for dataset captioning and crop preparation.
   - missing required fields fail immediately
   - no fallback injection from global config into dataset config
 - Interactive caption flow:
+  - after scan, show execution summary (`longEdge`, `jpegQuality`, `maxOutputTokens`, token upper bound, scheduler settings)
+  - users choose `preview first` or `skip preview` before full batch
   - if the provider API key env var is missing, prompt for the token in-terminal
   - save it to the current process and the Windows user environment
   - continue preview / batch automatically after saving
@@ -103,6 +111,7 @@ Test files live under `tests/` alongside the feature code. Shared fixtures and h
 | `workspace.test.ts` | Workspace paths, config validation, readApiKey, prompt loading | ❌ |
 | `crop.test.ts` | Sharp-based crop output, skip-on-rerun, caption copy, abort signal | ❌ |
 | `caption.e2e.test.ts` | Real VLM calls: requestCaption, runPreview, runBatch, skip-on-rerun | ✅ |
+| `caption.transform.test.ts` | Trigger-word transform modes (prefix/suffix/placeholder) and strict placeholder failure policy | No |
 | `pipeline.e2e.test.ts` | Full caption→crop integration flow | ✅ |
 
 ```bash

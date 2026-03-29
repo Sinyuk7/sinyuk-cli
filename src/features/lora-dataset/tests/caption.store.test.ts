@@ -64,7 +64,7 @@ const DATASET_CONFIG: LoraDatasetDatasetConfig = {
 	},
 	captionAssembly: {
 		separator: '. ',
-		keepSubjectFirst: true,
+		outputFields: ['subject', 'action', 'clothing'],
 	},
 };
 
@@ -124,6 +124,33 @@ describe('caption store', () => {
 		expect(store.getState().scanResult).toEqual(EMPTY_SCAN_RESULT);
 		expect(store.getState().errorMessage).toBeNull();
 		expect(mockRememberLoraDatasetPath).toHaveBeenCalledWith('/tmp/empty-dataset');
+	});
+
+	test('transitions to mode-select without auto-running preview after scan', async () => {
+		mockLoadScanContext.mockResolvedValue({
+			workspace: WORKSPACE,
+			scanResult: {
+				...EMPTY_SCAN_RESULT,
+				images: [
+					{
+						absolutePath: '/tmp/empty-dataset/image_0001.png',
+						relativePath: 'image_0001.png',
+						captionPath: '/tmp/empty-dataset/image_0001.txt',
+						rawResponsePath: '/tmp/empty-dataset/_lora_dataset/raw/1.json',
+					},
+				],
+				extensionCounts: { '.png': 1 },
+			},
+			datasetConfig: DATASET_CONFIG,
+			promptPreviewLines: ['Prompt preview'],
+		});
+
+		const store = createTestStore();
+		await store.getState().actions.startScan('/tmp/empty-dataset');
+
+		expect(store.getState().step).toBe('mode-select');
+		expect(store.getState().executionPlanLines.length).toBeGreaterThan(0);
+		expect(mockRunPreview).not.toHaveBeenCalled();
 	});
 
 	test('uses the remembered dataset path when no initial path is provided', () => {

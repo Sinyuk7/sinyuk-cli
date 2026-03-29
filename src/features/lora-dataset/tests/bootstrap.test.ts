@@ -60,7 +60,7 @@ describe('ensureLoraDatasetPromptReady', () => {
 		mkdirSync(workspace.workDirPath, { recursive: true });
 		writeFileSync(
 			workspace.configPath,
-			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  keepSubjectFirst: true\n',
+			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  outputFields:\n    - subject\n    - action\n    - clothing\n',
 			'utf8',
 		);
 		writeFileSync(
@@ -102,7 +102,7 @@ describe('ensureLoraDatasetPromptReady', () => {
 		mkdirSync(workspace.workDirPath, { recursive: true });
 		writeFileSync(
 			workspace.configPath,
-			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  keepSubjectFirst: true\n',
+			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  outputFields:\n    - subject\n    - action\n    - clothing\n',
 			'utf8',
 		);
 		writeFileSync(
@@ -124,7 +124,7 @@ describe('ensureLoraDatasetPromptReady', () => {
 		mkdirSync(workspace.workDirPath, { recursive: true });
 		writeFileSync(
 			workspace.configPath,
-			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  keepSubjectFirst: true\n',
+			'request:\n  temperature: 0.2\n  topP: 0.9\n  maxOutputTokens: 256\ncaptionAssembly:\n  separator: ". "\n  outputFields:\n    - subject\n    - action\n    - clothing\n',
 			'utf8',
 		);
 		writeFileSync(workspace.promptPath, 'customized prompt\nwith trigger words\n', 'utf8');

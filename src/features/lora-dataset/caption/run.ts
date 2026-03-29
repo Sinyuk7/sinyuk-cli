@@ -3,6 +3,7 @@ import type { Writable } from 'node:stream';
 import type { FeatureScreenProps } from '../../../shared/feature-screen.js';
 import { CliError } from '../../../platform/errors.js';
 import { ProviderFatalError } from '../shared/provider.js';
+import { buildCaptionExecutionPlanSummary } from '../shared/caption-execution-plan.js';
 import { loadScanContext, runBatch, runPreview } from '../shared/pipeline.js';
 import { getLoraDatasetFeatureConfig } from '../shared/schema.js';
 
@@ -35,9 +36,18 @@ export async function runCaptionNonInteractive(options: {
 			'NO_IMAGES_FOUND',
 		);
 	}
+	const executionPlan = buildCaptionExecutionPlanSummary({
+		imageCount: loaded.scanResult.images.length,
+		featureConfig: config,
+		datasetConfig: loaded.datasetConfig,
+		concurrencyOverride: options.concurrencyOverride ?? null,
+	});
+	options.stdout.write(`Result: Scanned ${loaded.scanResult.images.length} images.\n`);
+	for (const line of executionPlan.lines) {
+		options.stdout.write(`Plan: ${line}\n`);
+	}
 
 	if (options.mode === 'preview') {
-		options.stdout.write(`Result: Scanned ${loaded.scanResult.images.length} images.\n`);
 		const preview = await runPreview({
 			scanResult: loaded.scanResult,
 			config,

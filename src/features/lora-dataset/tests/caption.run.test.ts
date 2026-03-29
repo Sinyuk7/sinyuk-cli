@@ -55,7 +55,7 @@ const DATASET_CONFIG: LoraDatasetDatasetConfig = {
 	},
 	captionAssembly: {
 		separator: '. ',
-		keepSubjectFirst: true,
+		outputFields: ['subject', 'action', 'clothing'],
 	},
 };
 
@@ -136,7 +136,15 @@ describe('runCaptionNonInteractive', () => {
 
 		expect(exitCode).toBe(0);
 		expect(captured.read()).toBe(
-			'Result: Scanned 1 images.\nPreview: image_0001.png\nA short caption.\nResult: Preview complete.\n',
+			'Result: Scanned 1 images.\n' +
+				'Plan: Images: 1\n' +
+				'Plan: Upload transform: fit-inside longEdge=1024px, jpegQuality=85%\n' +
+				'Plan: Request: temperature=0.2, topP=0.9, maxOutputTokens=256\n' +
+				'Plan: Batch token upper bound: 256 x 1 = 256\n' +
+				'Plan: Scheduler: concurrency=2, timeout=120s, retries=1\n' +
+				'Preview: image_0001.png\n' +
+				'A short caption.\n' +
+				'Result: Preview complete.\n',
 		);
 	});
 
@@ -190,7 +198,15 @@ describe('runCaptionNonInteractive', () => {
 
 		expect(exitCode).toBe(0);
 		expect(captured.read()).toBe(
-			'[0/2] Starting... failed=0\n[1/2] image_0001.png failed=0\nResult: Captioned 2 images, failed 0.\n',
+			'Result: Scanned 2 images.\n' +
+				'Plan: Images: 2\n' +
+				'Plan: Upload transform: fit-inside longEdge=1024px, jpegQuality=85%\n' +
+				'Plan: Request: temperature=0.2, topP=0.9, maxOutputTokens=256\n' +
+				'Plan: Batch token upper bound: 256 x 2 = 512\n' +
+				'Plan: Scheduler: concurrency=2, timeout=120s, retries=1\n' +
+				'[0/2] Starting... failed=0\n' +
+				'[1/2] image_0001.png failed=0\n' +
+				'Result: Captioned 2 images, failed 0.\n',
 		);
 	});
 

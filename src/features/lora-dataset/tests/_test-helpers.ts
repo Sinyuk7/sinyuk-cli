@@ -75,7 +75,19 @@ export const DATASET_CONFIG: LoraDatasetDatasetConfig = {
 	},
 	captionAssembly: {
 		separator: '. ',
-		keepSubjectFirst: true,
+		outputFields: [
+			'subject',
+			'action',
+			'clothing',
+			'appearance',
+			'props',
+			'scene',
+			'view',
+			'lighting',
+			'style',
+			'background',
+			'details',
+		],
 	},
 };
 
@@ -151,7 +163,8 @@ function createDatasetConfigYaml(): string {
   maxOutputTokens: ${DATASET_CONFIG.request.maxOutputTokens}
 captionAssembly:
   separator: "${DATASET_CONFIG.captionAssembly.separator}"
-  keepSubjectFirst: ${DATASET_CONFIG.captionAssembly.keepSubjectFirst}
+  outputFields:
+${DATASET_CONFIG.captionAssembly.outputFields.map((field) => `    - ${field}`).join('\n')}
 `;
 }
 

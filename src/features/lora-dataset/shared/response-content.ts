@@ -219,13 +219,9 @@ function assembleCaptionFromPayload(options: {
 		!Array.isArray(options.parsedPayload)
 	) {
 		const payload = options.parsedPayload as Record<string, unknown>;
-		const subjectValues = flattenValue(payload.subject);
-		const otherValues = Object.entries(payload)
-			.filter(([key]) => key !== 'subject')
-			.flatMap(([, value]) => flattenValue(value));
-		const orderedValues = options.datasetConfig.captionAssembly.keepSubjectFirst
-			? [...subjectValues, ...otherValues]
-			: [...otherValues, ...subjectValues];
+		const orderedValues = options.datasetConfig.captionAssembly.outputFields.flatMap((field) =>
+			flattenValue(payload[field]),
+		);
 
 		return orderedValues
 			.map((value) => normalizeCaptionSegment(value, separator))
