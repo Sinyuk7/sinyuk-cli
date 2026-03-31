@@ -46,6 +46,56 @@ FAILURE: Return empty/default state TaskDashboardViewModel
 """
 ```
 
+## 📁 STRUCTURE
+
+```
+.
+├── src/
+│   ├── index.ts          # CLI entry (Clipanion bootstrap)
+│   ├── cli/              # CLI context types
+│   ├── commands/         # Built-in commands
+│   ├── features/         # Feature modules (VSA)
+│   ├── platform/         # Thin infrastructure layer
+│   └── shared/           # Shared types
+├── tests/                # Unit + smoke tests
+├── dist/                 # Build output (tsup)
+└── [config files]        # See section below
+```
+
+## 🚀 COMMANDS
+
+```bash
+# Development
+npm run build              # Build with tsup
+npm run build:watch        # Watch mode
+npm run lint               # ESLint check
+npm run lint:fix           # ESLint fix
+npm run format             # Prettier write
+npm run format:check       # Prettier check
+
+# Testing
+npm test                   # Build + all tests
+npm run test:unit          # Unit tests only
+npm run test:smoke         # Build + smoke tests
+
+# CLI Usage (after npm link)
+sinyuk-cli init            # Initialize global config
+sinyuk-cli                 # Open interactive workbench
+sinyuk-cli config show     # Show merged config
+sinyuk-cli hello-world run --path . --all
+```
+
+## ⚙️ CONFIGURATION
+
+| File               | Purpose                                 |
+| ------------------ | --------------------------------------- |
+| `package.json`     | ESM, Node>=18, CLI bin mapping          |
+| `tsconfig.json`    | Strict mode, ES2022, Bundler resolution |
+| `eslint.config.js` | TS-only linting, Prettier integration   |
+| `.prettierrc.json` | Tabs, singleQuote, printWidth:100       |
+| `tsup.config.ts`   | ESM bundle, shebang, Node18 target      |
+| `vitest.config.ts` | Unit + smoke test setup                 |
+
 ## ✅ Completion Checklist
 
 Before finalizing any response or task execution, silently verify:
