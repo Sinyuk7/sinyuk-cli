@@ -39,6 +39,11 @@ sinyuk-cli lora-dataset crop --path ./images
 
 - `lora-dataset`: [src/features/lora-dataset/README.md](src/features/lora-dataset/README.md)
 
+## Architecture & Development
+
+- [AGENTS.md](AGENTS.md) — Project architecture, conventions, and anti-patterns
+- [src/AGENTS.md](src/AGENTS.md) — Source code structure and feature development guide
+
 ## Notes
 
 - `sinyuk-cli init` only creates missing files under `~/.sinyuk-cli/`. It does not overwrite existing user config.
